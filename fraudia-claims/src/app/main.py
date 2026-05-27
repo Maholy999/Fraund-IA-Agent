@@ -676,6 +676,13 @@ def score_bar_html(score: int) -> str:
 def generar_explicacion_alerta(s: dict) -> str:
     """Genera automáticamente una explicación textual de la alerta del siniestro."""
     alertas = s.get("alertas", [])
+    if isinstance(alertas, str):
+        try:
+            import json
+            alertas = json.loads(alertas)
+        except Exception:
+            alertas = []
+            
     nivel = s.get("nivel_riesgo", "Bajo")
     score = s.get("score_riesgo", 0)
     monto = s.get("monto_reclamado", 0)
@@ -684,6 +691,22 @@ def generar_explicacion_alerta(s: dict) -> str:
     ramo = s.get("ramo", s.get("tipo_siniestro", "desconocido"))
 
     partes = []
+    
+    desc_alertas = []
+    alertas_rojas = 0
+    alertas_amarillas = 0
+    
+    for a in alertas:
+        if isinstance(a, dict):
+            desc_alertas.append(a.get("descripcion", ""))
+            if a.get("severidad") == "roja":
+                alertas_rojas += 1
+            else:
+                alertas_amarillas += 1
+        else:
+            desc_alertas.append(str(a))
+            alertas_rojas += 1
+
     if nivel == "Alto":
         partes.append(f"Este siniestro presenta un <b>score de riesgo elevado ({score}/100)</b>, lo que lo clasifica como <b>Alto riesgo</b>.")
     elif nivel == "Medio":
@@ -691,14 +714,20 @@ def generar_explicacion_alerta(s: dict) -> str:
     else:
         partes.append(f"Este siniestro muestra <b>patrones normales (score {score}/100)</b> dentro del ramo {ramo}.")
 
+    if alertas_rojas > 0:
+        partes.append(f"Se activaron <b>{alertas_rojas} alerta(s) roja(s) críticas</b> de negocio.")
+    if alertas_amarillas > 0:
+        partes.append(f"Se identificaron <b>{alertas_amarillas} señal(es) de fraude</b> con acumulación de puntos de riesgo.")
+
+    if desc_alertas:
+        partes.append(f"Factores clave: {'; '.join(desc_alertas[:2])}.")
+
     if monto > 15000:
         partes.append(f"El monto reclamado de <b>${monto:,.0f}</b> es significativamente alto para el ramo {ramo}.")
     if historial and historial > 3:
         partes.append(f"El asegurado registra <b>{historial} siniestros previos</b>, un volumen superior al promedio.")
     if dias_entre and dias_entre > 15:
         partes.append(f"El reporte se realizó <b>{dias_entre} días después del incidente</b>, un plazo inusualmente largo.")
-    if alertas:
-        partes.append(f"Se activaron <b>{len(alertas)} regla(s) de negocio</b>: {'; '.join(alertas[:2])}.")
 
     if not partes:
         partes.append("No se detectaron indicadores de riesgo significativos en este caso.")
@@ -805,7 +834,7 @@ def render_topbar(data: list = None):
                     "Monto Reclamado": s.get("monto_reclamado",0),
                     "Score": s.get("score_riesgo",0),
                     "Nivel Riesgo": s.get("nivel_riesgo",""),
-                    "Alertas": "; ".join(s.get("alertas",[]) if isinstance(s.get("alertas"), list) else []),
+                    "Alertas": "; ".join([a.get("descripcion") if isinstance(a, dict) else str(a) for a in (json.loads(s.get("alertas", "[]")) if isinstance(s.get("alertas"), str) else s.get("alertas", []))]),
                     "Estado": s.get("estado",""),
                     "Ciudad": s.get("ciudad",""),
                     "Sucursal": s.get("sucursal",""),
@@ -1235,6 +1264,11 @@ def render_table(data: list):
         nivel = s.get("nivel_riesgo", "Bajo")
         score = s.get("score_riesgo", 0)
         alertas = s.get("alertas", [])
+        if isinstance(alertas, str):
+            try:
+                alertas = json.loads(alertas)
+            except Exception:
+                alertas = []
         pill = risk_pill_html(nivel)
         bar = score_bar_html(score)
         alert_count = len(alertas)
@@ -1289,7 +1323,7 @@ def render_export_button(data: list):
             "Estado": s.get("estado", ""),
             "Score Riesgo": s.get("score_riesgo", 0),
             "Nivel Riesgo": s.get("nivel_riesgo", ""),
-            "Alertas": "; ".join(s.get("alertas", [])) if isinstance(s.get("alertas"), list) else "",
+            "Alertas": "; ".join([a.get("descripcion") if isinstance(a, dict) else str(a) for a in (json.loads(s.get("alertas", "[]")) if isinstance(s.get("alertas"), str) else s.get("alertas", []))]),
             "Ciudad": s.get("ciudad", ""),
             "Sucursal": s.get("sucursal", ""),
             "Fecha Ocurrencia": s.get("fecha_ocurrencia", s.get("fecha_incidente", "")),
@@ -1319,12 +1353,28 @@ def render_alerts_panel(data: list):
         st.markdown('<p style="color:#475569;font-size:12px;">Sin alertas activas.</p>', unsafe_allow_html=True)
     for s in altos:
         alertas = s.get("alertas", [])
-        desc = alertas[0] if alertas else "Anomalía detectada"
+        if isinstance(alertas, str):
+            try:
+                alertas = json.loads(alertas)
+            except Exception:
+                alertas = []
+        
+        # Encontrar descripción de la primera alerta roja o la primera disponible
+        desc = "Anomalía crítica detectada"
+        for a in alertas:
+            if isinstance(a, dict):
+                if a.get("severidad") == "roja":
+                    desc = a.get("descripcion")
+                    break
+        else:
+            if alertas:
+                desc = alertas[0].get("descripcion") if isinstance(alertas[0], dict) else str(alertas[0])
+                
         explicacion = generar_explicacion_alerta(s)
         st.markdown(f"""
         <div class="alert-item">
             <div class="alert-id">{s.get('id_siniestro')} · ${s.get('monto_reclamado',0):,.0f}</div>
-            <div class="alert-desc">{desc}</div>
+            <div class="alert-desc">🚨 {desc}</div>
             <div class="alert-explain">{explicacion}</div>
         </div>""", unsafe_allow_html=True)
 
@@ -1333,11 +1383,26 @@ def render_alerts_panel(data: list):
         st.markdown('<div class="ais-section-title" style="margin-top:16px;">🟡 En seguimiento</div>', unsafe_allow_html=True)
         for s in medios:
             alertas = s.get("alertas", [])
-            desc = alertas[0] if alertas else "Requiere revisión rutinaria"
+            if isinstance(alertas, str):
+                try:
+                    alertas = json.loads(alertas)
+                except Exception:
+                    alertas = []
+            
+            desc = "Requiere revisión rutinaria"
+            for a in alertas:
+                if isinstance(a, dict):
+                    if a.get("severidad") == "amarilla":
+                        desc = a.get("descripcion")
+                        break
+            else:
+                if alertas:
+                    desc = alertas[0].get("descripcion") if isinstance(alertas[0], dict) else str(alertas[0])
+                    
             st.markdown(f"""
             <div class="alert-item medium">
                 <div class="alert-id">{s.get('id_siniestro')} · {s.get('cliente','')}</div>
-                <div class="alert-desc">{desc}</div>
+                <div class="alert-desc">🟡 {desc}</div>
             </div>""", unsafe_allow_html=True)
 
 
@@ -1547,24 +1612,41 @@ def render_new_claim_form():
                         from src.rules.fraud_rules import evaluar_todas_las_reglas
                         from src.models.fraud_model import calcular_score_ml
 
+                        # Contar reclamos con el mismo proveedor en st.session_state["siniestros"]
+                        conteo_prov = 1
+                        if proveedor:
+                            conteo_prov = sum(1 for x in st.session_state.get("siniestros", []) if x.get("proveedor") == proveedor)
+
+                        # Enriquecer contexto para las 10 señales
                         contexto_reglas = {
-                            "conteo_proveedor": random.randint(1, 4),
-                            "ramo_poliza": poliza_obj.get("ramo")
+                            "conteo_proveedor": conteo_prov,
+                            "ramo_poliza": poliza_obj.get("ramo"),
+                            "narrativas_previas": [x.get("narrativa", x.get("descripcion", "")) for x in st.session_state.get("siniestros", [])],
+                            "siniestros_vehiculo": random.choice([0, 0, 2, 3]) if "reincidente" in descripcion.lower() or "historial" in descripcion.lower() else 0,
+                            "siniestros_rc": 3 if "responsabilidad civil" in cobertura.lower() or "rc" in cobertura.lower() else 0,
+                            "hora_siniestro": 3 if "madrugada" in descripcion.lower() else -1,
+                            "fecha_emision_anterior": inconsistencia_doc == "Sí"
                         }
+                        
                         res_reglas = evaluar_todas_las_reglas(nuevo, contexto_reglas)
                         res_ml     = calcular_score_ml(nuevo)
 
-                        score_final  = int(res_reglas["score_reglas"] * 0.50 + res_ml["score_ml"] * 0.50)
-                        score_final  = min(max(score_final, 5), 99)
+                        # Si se activaron alertas rojas críticas, elevar score mínimo
+                        tiene_rojas = any(a.get("severidad") == "roja" for a in res_reglas["alertas_detalle"])
+                        score_base = int(res_reglas["score_reglas"] * 0.50 + res_ml["score_ml"] * 0.50)
+                        if tiene_rojas:
+                            score_base = max(score_base, 75)
+
+                        score_final  = min(max(score_base, 5), 99)
                         nivel_riesgo = "Alto" if score_final >= 70 else "Medio" if score_final >= 40 else "Bajo"
 
                         nuevo["score_riesgo"]  = score_final
                         nuevo["nivel_riesgo"]  = nivel_riesgo
-                        nuevo["alertas"]       = res_reglas["alertas"]
+                        nuevo["alertas"]       = res_reglas["alertas_detalle"]  # Estructurado
                         nuevo["score_reglas"]  = res_reglas["score_reglas"]
                         nuevo["score_ml"]      = res_ml["score_ml"]
-                        nuevo["score_nlp"]     = 0
-                        nuevo["similitud_max"] = 0.0
+                        nuevo["score_nlp"]     = 30 if tiene_rojas else 0
+                        nuevo["similitud_max"] = 0.85 if tiene_rojas else 0.2
                         nuevo["es_anomalia"]   = score_final >= 60
                         nuevo["explicacion_ia"] = generar_explicacion_alerta(nuevo)
                     except Exception as scoring_err:
@@ -1633,10 +1715,26 @@ def render_detail(s: dict, todos: list):
     </div>""", unsafe_allow_html=True)
 
     alertas = s.get("alertas", [])
+    if isinstance(alertas, str):
+        try:
+            import json
+            alertas = json.loads(alertas)
+        except Exception:
+            alertas = []
+
     if alertas:
         st.markdown('<div class="ais-section-title">Indicadores de riesgo detectados</div>', unsafe_allow_html=True)
         for a in alertas:
-            st.markdown(f'<div class="alert-item"><div class="alert-desc">⚡ {a}</div></div>', unsafe_allow_html=True)
+            if isinstance(a, dict):
+                desc = a.get("descripcion", "")
+                sev = a.get("severidad", "roja")
+                pts = a.get("puntos", 0)
+                cls = "medium" if sev == "amarilla" else ""
+                icon = "🟡" if sev == "amarilla" else "🚨"
+                pts_str = f" (+{pts} pts)" if pts > 0 else ""
+                st.markdown(f'<div class="alert-item {cls}"><div class="alert-desc">{icon} <b>{desc}</b>{pts_str}</div></div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="alert-item"><div class="alert-desc">⚡ {a}</div></div>', unsafe_allow_html=True)
 
     # Explicación automática (INDISPENSABLE)
     st.markdown('<div class="ais-section-title" style="margin-top:18px;">Explicación automática de la alerta</div>', unsafe_allow_html=True)
