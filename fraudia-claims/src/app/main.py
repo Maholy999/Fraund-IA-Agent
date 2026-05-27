@@ -78,7 +78,7 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=Inter:wght@300;400;500;600&display=swap');
 
 /* ── reset & base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -91,10 +91,29 @@ st.markdown("""
 
 /* hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
+
+/* ══════════════════════════════════════════
+   LAYOUT GLOBAL — márgenes laterales reales
+   Esto es lo que controla que NADA quede pegado
+   a los bordes de la pantalla.
+   ══════════════════════════════════════════ */
 .block-container {
-    padding: 0 !important;
-    max-width: 100% !important;
+    max-width: 1520px !important;
+    margin: 0 auto !important;
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+    padding-left: 4rem !important;
+    padding-right: 4rem !important;
 }
+
+/* Streamlit a veces inyecta un contenedor interno extra */
+[data-testid="stAppViewBlockContainer"] {
+    max-width: 1520px !important;
+    margin: 0 auto !important;
+    padding-left: 4rem !important;
+    padding-right: 4rem !important;
+}
+
 section[data-testid="stSidebar"] { display: none; }
 div[data-testid="stToolbar"] { display: none; }
 
@@ -103,13 +122,6 @@ div[data-testid="stToolbar"] { display: none; }
 ::-webkit-scrollbar-track { background: #0B1120; }
 ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.7); }
-
-/* ── page wrapper with lateral margins ── */
-.ais-page {
-    padding: 0 48px 40px 48px;
-    max-width: 1600px;
-    margin: 0 auto;
-}
 
 /* ── topbar ── */
 .ais-topbar {
@@ -252,9 +264,10 @@ div[data-testid="stToolbar"] { display: none; }
     justify-content: space-between;
 }
 .kpi-label {
+    font-family: 'DM Sans', sans-serif;
     font-size: 11px;
     color: #64748B;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     font-weight: 500;
     line-height: 1.4;
@@ -265,15 +278,16 @@ div[data-testid="stToolbar"] { display: none; }
     line-height: 1;
 }
 .kpi-value {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 44px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
+    font-size: 42px;
     color: #F1F5F9;
-    line-height: 1;
-    letter-spacing: -1px;
-    margin-top: 8px;
+    line-height: 1.05;
+    letter-spacing: -0.5px;
+    margin-top: 10px;
+    font-variant-numeric: tabular-nums;
 }
-.kpi-value.small { font-size: 32px; letter-spacing: -0.5px; }
+.kpi-value.small { font-size: 30px; letter-spacing: 0; }
 .kpi-footer {
     display: flex;
     align-items: center;
@@ -281,16 +295,17 @@ div[data-testid="stToolbar"] { display: none; }
     margin-top: 8px;
 }
 .kpi-sub {
+    font-family: 'DM Sans', sans-serif;
     font-size: 12px;
     color: #475569;
     font-weight: 400;
 }
 .kpi-badge {
     font-size: 10px;
-    font-family: 'Space Mono', monospace;
-    padding: 2px 7px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 8px;
     border-radius: 4px;
-    font-weight: 600;
+    font-weight: 500;
 }
 .kpi-badge.indigo { background: rgba(99,102,241,0.12); color: #818CF8; }
 .kpi-badge.red    { background: rgba(244,63,94,0.12);  color: #FB7185; }
@@ -748,15 +763,15 @@ def page_login():
 # ═══════════════════════════════════════════════════════════════
 # TOPBAR
 # ═══════════════════════════════════════════════════════════════
-def render_topbar():
-    col_logo, col_mid, col_right = st.columns([2, 4, 2])
+def render_topbar(data: list = None):
+    col_logo, col_mid, col_right = st.columns([2, 4, 3])
     with col_logo:
         st.markdown("""
         <div style="padding:14px 0;">
           <span style="font-family:Syne,sans-serif;font-weight:800;font-size:20px;color:#fff;letter-spacing:-0.5px;">
             AIS<span style="color:#6366F1;">·</span>
           </span>
-          <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;
+          <span style="font-size:10px;color:#475569;font-family:'DM Mono',monospace;
           margin-left:10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);
           padding:3px 8px;border-radius:4px;letter-spacing:0.06em;">
           ANÁLISIS INTELIGENTE DE SINIESTROS
@@ -765,26 +780,53 @@ def render_topbar():
     with col_mid:
         st.markdown("""
         <div style="display:flex;align-items:center;gap:10px;padding:14px 0;">
-            <span class="ais-status-dot" style="width:7px;height:7px;border-radius:50%;
-            background:#10B981;box-shadow:0 0 8px #10B981;display:inline-block;"></span>
-            <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;letter-spacing:0.1em;">
+            <span style="width:7px;height:7px;border-radius:50%;background:#10B981;
+            box-shadow:0 0 8px #10B981;display:inline-block;"></span>
+            <span style="font-size:10px;color:#475569;font-family:'DM Mono',monospace;letter-spacing:0.1em;">
             SISTEMA ACTIVO
             </span>
         </div>""", unsafe_allow_html=True)
     with col_right:
-        c1, c2 = st.columns([3, 1])
-        with c1:
+        # usuario + exportar + cerrar sesión alineados en la topbar
+        c_user, c_export, c_logout = st.columns([2.2, 2.4, 0.8])
+        with c_user:
             st.markdown(f"""
             <div style="padding:14px 0;text-align:right;font-size:11px;color:#64748B;
-            font-family:'Space Mono',monospace;">
+            font-family:'DM Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                 {st.session_state.get('username','Analista')}
             </div>""", unsafe_allow_html=True)
-        with c2:
+        with c_export:
+            if data:
+                import io as _io
+                df_exp = pd.DataFrame([{
+                    "ID": s.get("id_siniestro",""),
+                    "Asegurado": s.get("cliente", s.get("id_asegurado","")),
+                    "Ramo": s.get("ramo", s.get("tipo_siniestro","")),
+                    "Monto Reclamado": s.get("monto_reclamado",0),
+                    "Score": s.get("score_riesgo",0),
+                    "Nivel Riesgo": s.get("nivel_riesgo",""),
+                    "Alertas": "; ".join(s.get("alertas",[]) if isinstance(s.get("alertas"), list) else []),
+                    "Estado": s.get("estado",""),
+                    "Ciudad": s.get("ciudad",""),
+                    "Sucursal": s.get("sucursal",""),
+                    "Fecha Ocurrencia": s.get("fecha_ocurrencia", s.get("fecha_incidente","")),
+                } for s in data])
+                csv_buf = _io.StringIO()
+                df_exp.to_csv(csv_buf, index=False, encoding="utf-8-sig")
+                st.download_button(
+                    label="📥 Exportar reporte",
+                    data=csv_buf.getvalue().encode("utf-8-sig"),
+                    file_name=f"AIS_auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    help="Exportar reporte de auditoría en formato CSV",
+                )
+        with c_logout:
             if st.button("⎋", key="logout_btn", help="Cerrar sesión"):
                 st.session_state["logged_in"] = False
                 st.rerun()
 
-    st.markdown('<hr style="margin:0 0 28px;border:none;border-top:1px solid rgba(99,102,241,0.15);">', unsafe_allow_html=True)
+    st.markdown('<hr style="margin:0 0 32px;border:none;border-top:1px solid rgba(99,102,241,0.15);">', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -798,7 +840,7 @@ def render_kpis(data: list):
     score_avg = sum(s.get("score_riesgo", 0) for s in data) / total if total else 0
     pct_alto = f"{altos/total*100:.0f}%" if total else "—"
 
-    st.markdown('<div class="ais-section-title">Métricas del portafolio</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ais-section-title">Panel de control · Siniestros</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
 
     cards = [
@@ -1627,8 +1669,8 @@ def render_detail(s: dict, todos: list):
 # MAIN DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 def page_dashboard():
-    render_topbar()
     data = st.session_state["siniestros"]
+    render_topbar(data)
 
     left_col, right_col = st.columns([3.2, 1])
 
@@ -1638,8 +1680,8 @@ def page_dashboard():
 
         st.markdown('<div class="ais-separator"></div>', unsafe_allow_html=True)
 
-        # Controls row
-        c_btn, c_filter, c_search, c_export = st.columns([1.5, 1.2, 2, 1.8])
+        # Controls row — export moved to topbar
+        c_btn, c_filter, c_search = st.columns([1.5, 1.2, 3])
         with c_btn:
             if st.button("＋ Nuevo siniestro", key="open_form_btn", use_container_width=True, type="primary"):
                 st.session_state["show_form"] = not st.session_state.get("show_form", False)
@@ -1649,8 +1691,6 @@ def page_dashboard():
         with c_search:
             busqueda = st.text_input("", placeholder="🔍 Buscar por asegurado, ID, ciudad…",
                                      label_visibility="collapsed")
-        with c_export:
-            render_export_button(data)
 
         st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
 
@@ -1673,7 +1713,7 @@ def page_dashboard():
 
         # Tabs principales
         tab_table, tab_charts, tab_detail, tab_red, tab_ranking, tab_ahorro = st.tabs([
-            "📋 Siniestros",
+            "📋 Tabla de Siniestros",
             "📊 Análisis Visual",
             "🔍 Detalle & NLP",
             "🕸️ Red de Relaciones",
