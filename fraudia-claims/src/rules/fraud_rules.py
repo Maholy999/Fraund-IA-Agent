@@ -45,6 +45,15 @@ def regla_proveedor_frecuente(proveedor: str, conteo_proveedor: int, umbral: int
     return activada, f"El proveedor '{proveedor}' aparece en {conteo_proveedor} siniestros recientes", 15
 
 
+def regla_ramo_inconsistente(ramo_siniestro: str, ramo_poliza: str) -> RuleResult:
+    if not ramo_siniestro or not ramo_poliza:
+        return False, "Información de ramo incompleta para validación", 0
+    rs = ramo_siniestro.strip().lower()
+    rp = ramo_poliza.strip().lower()
+    activada = rs != rp
+    return activada, f"Inconsistencia grave: Ramo del siniestro ({ramo_siniestro}) no coincide con ramo de póliza ({ramo_poliza})", 40
+
+
 def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Ejecuta todas las reglas de negocio sobre un siniestro y devuelve
@@ -65,6 +74,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
         regla_proveedor_frecuente(
             siniestro.get("proveedor", ""),
             contexto.get("conteo_proveedor", 0),
+        ),
+        regla_ramo_inconsistente(
+            siniestro.get("ramo", ""),
+            siniestro.get("ramo_poliza") or contexto.get("ramo_poliza", ""),
         ),
     ]
 

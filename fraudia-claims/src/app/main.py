@@ -14,6 +14,24 @@ from datetime import datetime, date
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, ROOT)
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(ROOT, ".env"))
+
+from supabase import create_client, Client
+supabase_url = os.environ.get("SUPABASE_URL", "")
+if "/rest/v1/" in supabase_url:
+    supabase_url = supabase_url.replace("/rest/v1/", "").strip("/")
+supabase_key = os.environ.get("SUPABASE_KEY", "")
+
+if supabase_url and supabase_key:
+    try:
+        supabase: Client = create_client(supabase_url, supabase_key)
+    except Exception as e:
+        st.error(f"Error inicializando Supabase: {e}")
+        supabase = None
+else:
+    supabase = None
+
 # ── page config (MUST be first Streamlit call) ─────────────────
 st.set_page_config(
     page_title="FraudIA Claims",
@@ -23,16 +41,28 @@ st.set_page_config(
 )
 
 # ── demo data loader ───────────────────────────────────────────
-@st.cache_data
 def cargar_datos_demo():
-    path = os.path.join(ROOT, "data/synthetic/siniestros_demo.json")
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    # generate on-the-fly if missing
-    sys.path.insert(0, os.path.join(ROOT, "data/synthetic"))
-    from generate_demo import generar_dataset
-    return generar_dataset()
+    if not supabase:
+        path = os.path.join(ROOT, "data/synthetic/siniestros_demo.json")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        sys.path.insert(0, os.path.join(ROOT, "data/synthetic"))
+        from generate_demo import generar_dataset
+        return generar_dataset()
+    try:
+        res = supabase.table("siniestros").select("*").order("fecha_registro", desc=True).execute()
+        if res.data:
+            for item in res.data:
+                if isinstance(item.get("alertas"), str):
+                    try:
+                        item["alertas"] = json.loads(item["alertas"])
+                    except Exception:
+                        item["alertas"] = []
+            return res.data
+    except Exception as e:
+        st.error(f"Error conectando a Supabase (ejecuta docs/schema.sql en el editor de Supabase primero): {e}")
+    return []
 
 # ── imports (soft-fail) ────────────────────────────────────────
 try:
@@ -796,6 +826,7 @@ def _send_chat(pregunta: str, data: list):
 # NEW CLAIM FORM
 # ═══════════════════════════════════════════════════════════════
 def render_new_claim_form():
+    import random
     st.markdown("""
     <div style="background:rgba(13,18,32,0.98);border:1px solid rgba(59,130,246,0.35);
     border-radius:12px;padding:24px 28px;margin-bottom:20px;
@@ -810,34 +841,50 @@ def render_new_claim_form():
     </div>""", unsafe_allow_html=True)
 
     with st.form("form_siniestro", clear_on_submit=True):
+        st.markdown('<p style="color:#3B82F6;font-weight:600;font-size:13px;margin-bottom:10px;">1. Información del Siniestro</p>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             id_sin = st.text_input("ID Siniestro", placeholder="SIN-2024-0021")
-            cliente = st.text_input("Cliente", placeholder="Nombre completo")
-            tipo = st.selectbox("Tipo de siniestro", [
-                "Robo de vehículo", "Accidente de tránsito", "Daño parcial",
-                "Incendio", "Robo de contenido", "Responsabilidad civil",
-                "Asistencia vial", "Granizo", "Otro",
-            ])
-            monto = st.number_input("Monto reclamado ($)", min_value=0.0, step=100.0)
-            historial = st.number_input("Historial de reclamos previos", min_value=0, step=1)
+            id_aseg = st.text_input("ID Asegurado (Debe existir previamente)", placeholder="ASEG-2024-0001")
+            id_pol = st.text_input("ID Póliza (Debe pertenecer al asegurado)", placeholder="POL-2024-0001")
+            ramo = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
+            cobertura = st.selectbox("Cobertura / Tipo", ["Choque", "Robo", "Atención médica", "Incendio", "Daño", "Otro"])
+            monto = st.number_input("Monto reclamado ($ USD)", min_value=0.0, step=100.0)
+            monto_est = st.number_input("Monto estimado ($ USD)", min_value=0.0, step=100.0)
 
         with c2:
-            fecha_inc = st.date_input("Fecha del incidente", value=date.today())
-            fecha_pol = st.date_input("Fecha contratación póliza", value=date.today())
-            ciudad = st.selectbox("Ciudad", [
-                "Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena",
-                "Bucaramanga", "Pereira", "Manizales", "Ibagué", "Santa Marta", "Otra",
+            monto_pag = st.number_input("Monto pagado ($ USD)", min_value=0.0, step=100.0)
+            estado = st.selectbox("Estado del siniestro", ["Reserva", "Pago Total", "Pago Parcial", "Anticipo", "Negativa", "Cierre Sin Consecuencia", "Liquidado"])
+            fecha_ocurrencia = st.date_input("Fecha del incidente (ocurrencia)", value=date.today())
+            fecha_reporte = st.date_input("Fecha del reporte (notificación)", value=date.today())
+            sucursal = st.selectbox("Sucursal del siniestro", [
+                "Sucursal Quito Norte", "Sucursal Guayaquil Centro", "Sucursal Cuenca El Sagrario",
+                "Sucursal Manta Tarqui", "Sucursal Portoviejo Real", "Sucursal Loja Sur",
+                "Sucursal Ambato Ficoa"
             ])
-            proveedor = st.text_input("Proveedor / Taller", placeholder="Nombre del taller")
+            beneficiario = st.selectbox("Beneficiario", ["Taller", "Clínica", "Perito", "Asegurado", "Otro"])
+            proveedor = st.text_input("Proveedor / Taller (Opcional)", placeholder="Nombre del taller/clínica")
 
-        narrativa = st.text_area("Descripción narrativa del siniestro",
-                                 placeholder="Describe detalladamente el incidente reportado…",
-                                 height=100)
+        descripcion = st.text_area("Descripción detallada del reclamo (narrativa)",
+                                   placeholder="Describe detalladamente el incidente reportado…",
+                                   height=80)
+
+        st.markdown('<hr style="margin:20px 0 15px;border-top:1px solid rgba(30,58,95,0.4);">', unsafe_allow_html=True)
+        st.markdown('<p style="color:#3B82F6;font-weight:600;font-size:13px;margin-bottom:10px;">2. Documentación Adjunta (Ingreso Manual)</p>', unsafe_allow_html=True)
+        
+        c3, c4 = st.columns(2)
+        with c3:
+            tipo_doc = st.selectbox("Tipo de Documento", ["Factura de Reparación", "Cédula del Asegurado", "Informe de Tránsito", "Historia Clínica", "Prescripción Médica", "Otro"])
+            entregado = st.selectbox("¿Entregado?", ["Sí", "No"])
+            legible = st.selectbox("¿Legible?", ["Sí", "No"])
+        with c4:
+            fecha_emision_doc = st.date_input("Fecha de emisión del documento", value=date.today())
+            inconsistencia_doc = st.selectbox("¿Inconsistencia detectada en documento?", ["No", "Sí"])
+            observacion_doc = st.text_input("Observación del Documento", placeholder="Observación sobre el documento...")
 
         col_s, col_c = st.columns([2, 1])
         with col_s:
-            submitted = st.form_submit_button("🔍 Registrar y analizar", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("🔍 Registrar, Analizar y Guardar en BD", use_container_width=True, type="primary")
         with col_c:
             cancelar = st.form_submit_button("Cancelar", use_container_width=True)
 
@@ -846,45 +893,160 @@ def render_new_claim_form():
             st.rerun()
 
         if submitted:
-            if not id_sin or not cliente:
-                st.error("ID de siniestro y cliente son obligatorios.")
+            if not id_sin or not id_aseg or not id_pol or not descripcion:
+                st.error("ID Siniestro, ID Asegurado, ID Póliza y Descripción son obligatorios.")
+            elif not supabase:
+                st.error("Error: Supabase no está configurado. Configura el archivo .env para continuar.")
             else:
-                nuevo = {
-                    "id": len(st.session_state["siniestros"]) + 1,
-                    "id_siniestro": id_sin,
-                    "cliente": cliente,
-                    "tipo_siniestro": tipo,
-                    "monto_reclamado": float(monto),
-                    "fecha_incidente": str(fecha_inc),
-                    "fecha_poliza": str(fecha_pol),
-                    "ciudad": ciudad,
-                    "proveedor": proveedor or "Sin especificar",
-                    "historial_reclamos": int(historial),
-                    "narrativa": narrativa,
-                    "score_riesgo": 0,
-                    "nivel_riesgo": "Bajo",
-                    "alertas": [],
-                    "fecha_registro": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                }
+                with st.spinner("Validando IDs en Supabase y ejecutando análisis de fraude…"):
+                    # 1. Validar Asegurado
+                    res_aseg = supabase.table("asegurados").select("*").eq("id_asegurado", id_aseg).execute()
+                    if not res_aseg.data:
+                        st.error(f"❌ Error de Validación: El ID de Asegurado '{id_aseg}' no existe en la base de datos.")
+                        return
+                    
+                    asegurado_obj = res_aseg.data[0]
+                    nombre_asegurado = asegurado_obj.get("nombre", "Desconocido")
+                    ciudad_asegurado = asegurado_obj.get("ciudad", "Ecuador")
+                    reclamos_previos = asegurado_obj.get("reclamos_ultimos_12_meses", 0)
+                    
+                    # 2. Validar Póliza
+                    res_pol = supabase.table("polizas").select("*").eq("id_poliza", id_pol).execute()
+                    if not res_pol.data:
+                        st.error(f"❌ Error de Validación: El ID de Póliza '{id_pol}' no existe en la base de datos.")
+                        return
+                    
+                    poliza_obj = res_pol.data[0]
+                    
+                    # 3. Validar que la póliza pertenezca al asegurado
+                    if poliza_obj.get("id_asegurado") != id_aseg:
+                        st.error(f"❌ Error de Validación: La póliza '{id_pol}' no pertenece al asegurado '{id_aseg}' (le pertenece a '{poliza_obj.get('id_asegurado')}').")
+                        return
 
-                with st.spinner("Ejecutando análisis de riesgo…"):
-                    nuevo = analizar_siniestro(nuevo)
+                    # 4. Calcular campos derivados y coherentes
+                    fp_inicio = datetime.strptime(poliza_obj.get("fecha_inicio"), "%Y-%m-%d").date()
+                    fp_fin = datetime.strptime(poliza_obj.get("fecha_fin"), "%Y-%m-%d").date()
+                    
+                    dias_inicio = (fecha_ocurrencia - fp_inicio).days
+                    dias_fin = (fp_fin - fecha_ocurrencia).days
+                    dias_entre = (fecha_reporte - fecha_ocurrencia).days
+                    
+                    # Contar siniestros en BD para historial
+                    historial_count_res = supabase.table("siniestros").select("id", count="exact").eq("id_asegurado", id_aseg).execute()
+                    siniestros_en_bd = historial_count_res.count if historial_count_res.count is not None else 0
+                    total_historial = siniestros_en_bd + reclamos_previos
 
-                st.session_state["siniestros"].insert(0, nuevo)
-                st.session_state["show_form"] = False
+                    # Buscar proveedor_id de compatibilidad
+                    prov_id = None
+                    if proveedor:
+                        res_prov = supabase.table("proveedores").select("id").ilike("nombre", f"%{proveedor}%").limit(1).execute()
+                        if res_prov.data:
+                            prov_id = res_prov.data[0].get("id")
 
-                nivel = nuevo.get("nivel_riesgo", "Bajo")
-                score = nuevo.get("score_riesgo", 0)
-                alertas = nuevo.get("alertas", [])
+                    # Preparar objeto siniestro
+                    nuevo = {
+                        "id_siniestro": id_sin,
+                        "id_poliza": id_pol,
+                        "id_asegurado": id_aseg,
+                        "ramo": ramo,
+                        "cobertura": cobertura,
+                        "fecha_ocurrencia": str(fecha_ocurrencia),
+                        "fecha_reporte": str(fecha_reporte),
+                        "monto_reclamado": float(monto),
+                        "monto_estimado": float(monto_est),
+                        "monto_pagado": float(monto_pag),
+                        "estado": estado,
+                        "sucursal": sucursal,
+                        "descripcion": descripcion,
+                        "documentos_completos": entregado == "Sí",
+                        "beneficiario": beneficiario,
+                        "dias_desde_inicio_poliza": dias_inicio,
+                        "dias_desde_fin_poliza": dias_fin,
+                        "dias_entre_ocurrencia_reporte": dias_entre,
+                        "historial_siniestros_asegurado": total_historial,
+                        "etiqueta_fraude_simulada": 0,
+                        
+                        # Campos de compatibilidad preexistentes
+                        "cliente": nombre_asegurado,
+                        "tipo_siniestro": cobertura,
+                        "fecha_incidente": str(fecha_ocurrencia),
+                        "fecha_poliza": str(fp_inicio),
+                        "ciudad": ciudad_asegurado,
+                        "proveedor": proveedor or "Sin especificar",
+                        "proveedor_id": prov_id,
+                        "historial_reclamos": total_historial,
+                        "narrativa": descripcion,
+                        "score_riesgo": 0,
+                        "nivel_riesgo": "Bajo",
+                        "alertas": []
+                    }
 
-                if nivel == "Alto":
-                    st.error(f"⚠️ Siniestro registrado · Nivel de riesgo **ALTO** (score {score}). {len(alertas)} alerta(s) detectada(s).")
-                elif nivel == "Medio":
-                    st.warning(f"🟡 Siniestro registrado · Nivel de riesgo **MEDIO** (score {score}).")
-                else:
-                    st.success(f"✅ Siniestro registrado · Nivel de riesgo **BAJO** (score {score}).")
+                    # Ejecutar análisis del motor de reglas y del modelo ML
+                    try:
+                        from src.rules.fraud_rules import evaluar_todas_las_reglas
+                        from src.models.fraud_model import calcular_score_ml
+                        
+                        contexto_reglas = {
+                            "conteo_proveedor": random.randint(1, 4), 
+                            "ramo_poliza": poliza_obj.get("ramo")
+                        }
+                        res_reglas = evaluar_todas_las_reglas(nuevo, contexto_reglas)
+                        res_ml = calcular_score_ml(nuevo)
+                        
+                        score_final = int(res_reglas["score_reglas"] * 0.50 + res_ml["score_ml"] * 0.50)
+                        score_final = min(max(score_final, 5), 99)
+                        nivel_riesgo = "Alto" if score_final >= 70 else "Medio" if score_final >= 40 else "Bajo"
+                        
+                        nuevo["score_riesgo"] = score_final
+                        nuevo["nivel_riesgo"] = nivel_riesgo
+                        nuevo["alertas"] = res_reglas["alertas"]
+                        nuevo["score_reglas"] = res_reglas["score_reglas"]
+                        nuevo["score_ml"] = res_ml["score_ml"]
+                        nuevo["score_nlp"] = 0
+                        nuevo["similitud_max"] = 0.0
+                        nuevo["es_anomalia"] = score_final >= 60
+                        nuevo["explicacion_ia"] = f"Análisis completado. Riesgo {nivel_riesgo} debido a los indicadores: {', '.join(res_reglas['alertas']) if res_reglas['alertas'] else 'Ninguno destacado'}."
+                    except Exception as scoring_err:
+                        st.warning(f"Error ejecutando pipeline de análisis de IA: {scoring_err}")
+                        nuevo["score_riesgo"] = 10
+                        nuevo["nivel_riesgo"] = "Bajo"
+                        nuevo["alertas"] = []
 
-                st.rerun()
+                    # 5. Insertar Siniestro en Supabase
+                    alertas_raw = nuevo["alertas"]
+                    nuevo["alertas"] = json.dumps(nuevo["alertas"])
+                    
+                    res_ins_sin = supabase.table("siniestros").insert(nuevo).execute()
+                    if not res_ins_sin.data:
+                        st.error("Error insertando el siniestro en la base de datos de Supabase.")
+                        return
+
+                    # 6. Insertar Documento asociado en Supabase
+                    nuevo_doc = {
+                        "id_siniestro": id_sin,
+                        "tipo_documento": tipo_doc,
+                        "entregado": entregado == "Sí",
+                        "legible": legible == "Sí",
+                        "fecha_emision": str(fecha_emision_doc),
+                        "inconsistencia_detectada": inconsistencia_doc == "Sí",
+                        "observacion": observacion_doc or "Registrado manualmente."
+                    }
+                    supabase.table("documentos").insert(nuevo_doc).execute()
+
+                    # Rellenar lista de estado de la aplicación
+                    nuevo["alertas"] = alertas_raw
+                    st.session_state["siniestros"].insert(0, nuevo)
+                    st.session_state["show_form"] = False
+
+                    # Mostrar avisos visuales
+                    if nuevo["nivel_riesgo"] == "Alto":
+                        st.error(f"⚠️ Siniestro registrado en Supabase · Riesgo **ALTO** (score {nuevo['score_riesgo']}).")
+                    elif nuevo["nivel_riesgo"] == "Medio":
+                        st.warning(f"🟡 Siniestro registrado en Supabase · Riesgo **MEDIO** (score {nuevo['score_riesgo']}).")
+                    else:
+                        st.success(f"✅ Siniestro registrado en Supabase · Riesgo **BAJO** (score {nuevo['score_riesgo']}).")
+
+                    st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════
