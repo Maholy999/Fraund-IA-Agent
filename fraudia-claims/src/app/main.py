@@ -1,6 +1,6 @@
 """
 src/app/main.py
-FraudIA Claims — Dashboard principal de análisis antifraude.
+AIS — Análisis Inteligente de Siniestros · Dashboard principal.
 """
 
 import streamlit as st
@@ -8,6 +8,7 @@ import pandas as pd
 import json
 import os
 import sys
+import io
 from datetime import datetime, date
 
 # ── path setup ─────────────────────────────────────────────────
@@ -34,7 +35,7 @@ else:
 
 # ── page config (MUST be first Streamlit call) ─────────────────
 st.set_page_config(
-    page_title="FraudIA Claims",
+    page_title="AIS — Análisis Inteligente de Siniestros",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -61,7 +62,7 @@ def cargar_datos_demo():
                         item["alertas"] = []
             return res.data
     except Exception as e:
-        st.error(f"Error conectando a Supabase (ejecuta docs/schema.sql en el editor de Supabase primero): {e}")
+        st.error(f"Error conectando a Supabase: {e}")
     return []
 
 # ── imports (soft-fail) ────────────────────────────────────────
@@ -73,228 +74,450 @@ except ImportError:
     PLOTLY = False
 
 # ═══════════════════════════════════════════════════════════════
-# CSS — enterprise dark theme
+# CSS — AIS Enterprise Theme (Indigo / Cyan)
 # ═══════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* ── reset & base ── */
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .stApp {
-    background: #070B14 !important;
+    background: #060A12 !important;
     font-family: 'Inter', sans-serif !important;
-    color: #C8D4E8 !important;
+    color: #CBD5E1 !important;
 }
 
-/* hide default streamlit chrome */
+/* hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 0 !important; max-width: 100% !important; }
+.block-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+}
 section[data-testid="stSidebar"] { display: none; }
 div[data-testid="stToolbar"] { display: none; }
 
 /* ── scrollbar ── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: #0D1220; }
-::-webkit-scrollbar-thumb { background: #1E3A5F; border-radius: 4px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0B1120; }
+::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.7); }
+
+/* ── page wrapper with lateral margins ── */
+.ais-page {
+    padding: 0 48px 40px 48px;
+    max-width: 1600px;
+    margin: 0 auto;
+}
 
 /* ── topbar ── */
-.topbar {
-    position: sticky; top: 0; z-index: 999;
-    background: rgba(7,11,20,0.95);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(30,58,95,0.6);
-    padding: 0 32px;
-    height: 56px;
-    display: flex; align-items: center; justify-content: space-between;
+.ais-topbar {
+    background: rgba(6,10,18,0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(99,102,241,0.18);
+    padding: 0 48px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    margin-bottom: 32px;
 }
-.topbar-logo {
+.ais-logo {
     font-family: 'Syne', sans-serif;
-    font-weight: 800; font-size: 20px;
-    color: #fff; letter-spacing: -0.5px;
+    font-weight: 800;
+    font-size: 22px;
+    color: #fff;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.topbar-logo span { color: #3B82F6; }
-.topbar-right { display: flex; align-items: center; gap: 16px; }
-.topbar-user {
-    font-size: 12px; color: #64748B;
+.ais-logo-accent { color: #6366F1; }
+.ais-logo-sub {
+    font-size: 10px;
+    color: #475569;
+    font-family: 'Space Mono', monospace;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(99,102,241,0.1);
+    border: 1px solid rgba(99,102,241,0.2);
+    padding: 3px 8px;
+    border-radius: 4px;
+}
+.ais-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #475569;
     font-family: 'Space Mono', monospace;
 }
-.topbar-btn {
-    background: rgba(59,130,246,0.12);
-    border: 1px solid rgba(59,130,246,0.3);
-    color: #3B82F6; padding: 6px 14px;
-    border-radius: 6px; font-size: 12px;
-    cursor: pointer; transition: all 0.2s;
-    font-family: 'Inter', sans-serif; font-weight: 500;
+.ais-status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #10B981;
+    box-shadow: 0 0 8px #10B981;
+    animation: pulse-green 2s infinite;
 }
-.topbar-badge {
-    background: #1E3A5F; color: #60A5FA;
-    font-size: 10px; font-family: 'Space Mono', monospace;
-    padding: 3px 8px; border-radius: 4px; letter-spacing: 0.05em;
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 
-/* ── main layout ── */
-.main-wrap {
-    display: grid;
-    grid-template-columns: 1fr 340px;
-    gap: 0;
-    height: calc(100vh - 56px);
-    overflow: hidden;
-}
-.left-panel { overflow-y: auto; padding: 24px 24px 24px 32px; }
-.right-panel {
-    border-left: 1px solid rgba(30,58,95,0.5);
-    background: rgba(10,15,28,0.8);
-    overflow-y: auto;
-    padding: 24px 20px;
-    display: flex; flex-direction: column; gap: 16px;
-}
-
-/* ── section titles ── */
-.section-title {
+/* ── section headers ── */
+.ais-section-title {
     font-family: 'Syne', sans-serif;
-    font-weight: 700; font-size: 11px;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: #3B82F6; margin-bottom: 14px;
-    display: flex; align-items: center; gap: 8px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #6366F1;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
-.section-title::after {
-    content: ''; flex: 1;
-    height: 1px; background: rgba(59,130,246,0.2);
+.ais-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(99,102,241,0.3), transparent);
 }
 
-/* ── KPI cards ── */
+/* ══════════════════════════════════════════
+   KPI CARDS — rediseñadas con jerarquía clara
+   ══════════════════════════════════════════ */
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px; margin-bottom: 20px;
+    gap: 20px;
+    margin-bottom: 32px;
 }
 .kpi-card {
-    background: rgba(13,18,32,0.9);
-    border: 1px solid rgba(30,58,95,0.5);
-    border-radius: 10px;
-    padding: 16px 18px;
-    position: relative; overflow: hidden;
-    transition: border-color 0.2s, transform 0.2s;
+    background: #0B1120;
+    border: 1px solid rgba(99,102,241,0.12);
+    border-radius: 14px;
+    padding: 24px 26px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s ease;
+    cursor: default;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
-.kpi-card:hover { border-color: rgba(59,130,246,0.4); transform: translateY(-1px); }
+.kpi-card:hover {
+    border-color: rgba(99,102,241,0.35);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(99,102,241,0.12);
+}
+/* top accent line */
 .kpi-card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0;
-    height: 2px;
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 14px 14px 0 0;
 }
-.kpi-card.blue::before { background: linear-gradient(90deg, #3B82F6, transparent); }
-.kpi-card.red::before { background: linear-gradient(90deg, #EF4444, transparent); }
-.kpi-card.amber::before { background: linear-gradient(90deg, #F59E0B, transparent); }
-.kpi-card.green::before { background: linear-gradient(90deg, #10B981, transparent); }
-.kpi-label { font-size: 10px; color: #64748B; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
-.kpi-value { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 28px; color: #fff; line-height: 1; }
-.kpi-sub { font-size: 11px; color: #475569; margin-top: 4px; }
+.kpi-card.indigo::before { background: linear-gradient(90deg, #6366F1, #818CF8); }
+.kpi-card.red::before    { background: linear-gradient(90deg, #F43F5E, #FB7185); }
+.kpi-card.amber::before  { background: linear-gradient(90deg, #F59E0B, #FCD34D); }
+.kpi-card.cyan::before   { background: linear-gradient(90deg, #22D3EE, #67E8F9); }
 
-/* ── risk semaphore ── */
-.risk-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 20px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+/* background glow blob */
+.kpi-card::after {
+    content: '';
+    position: absolute;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    right: 16px; top: 16px;
+    opacity: 0.08;
+    filter: blur(20px);
 }
-.risk-alto { background: rgba(239,68,68,0.12); color: #F87171; border: 1px solid rgba(239,68,68,0.3); }
-.risk-medio { background: rgba(245,158,11,0.12); color: #FBBF24; border: 1px solid rgba(245,158,11,0.3); }
-.risk-bajo { background: rgba(16,185,129,0.12); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
-.risk-dot { width: 6px; height: 6px; border-radius: 50%; }
-.risk-alto .risk-dot { background: #EF4444; box-shadow: 0 0 6px #EF4444; }
-.risk-medio .risk-dot { background: #F59E0B; box-shadow: 0 0 6px #F59E0B; }
-.risk-bajo .risk-dot { background: #10B981; box-shadow: 0 0 6px #10B981; }
+.kpi-card.indigo::after { background: #6366F1; }
+.kpi-card.red::after    { background: #F43F5E; }
+.kpi-card.amber::after  { background: #F59E0B; }
+.kpi-card.cyan::after   { background: #22D3EE; }
+
+.kpi-top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+.kpi-label {
+    font-size: 11px;
+    color: #64748B;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.4;
+}
+.kpi-icon {
+    font-size: 22px;
+    opacity: 0.7;
+    line-height: 1;
+}
+.kpi-value {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 44px;
+    color: #F1F5F9;
+    line-height: 1;
+    letter-spacing: -1px;
+    margin-top: 8px;
+}
+.kpi-value.small { font-size: 32px; letter-spacing: -0.5px; }
+.kpi-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+.kpi-sub {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 400;
+}
+.kpi-badge {
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.kpi-badge.indigo { background: rgba(99,102,241,0.12); color: #818CF8; }
+.kpi-badge.red    { background: rgba(244,63,94,0.12);  color: #FB7185; }
+.kpi-badge.amber  { background: rgba(245,158,11,0.12); color: #FCD34D; }
+.kpi-badge.cyan   { background: rgba(34,211,238,0.12); color: #67E8F9; }
+
+/* ── risk pills ── */
+.risk-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+.risk-alto  { background: rgba(244,63,94,0.12);   color: #FB7185; border: 1px solid rgba(244,63,94,0.25); }
+.risk-medio { background: rgba(245,158,11,0.12);  color: #FCD34D; border: 1px solid rgba(245,158,11,0.25); }
+.risk-bajo  { background: rgba(16,185,129,0.12);  color: #34D399; border: 1px solid rgba(16,185,129,0.25); }
+.risk-dot { width: 5px; height: 5px; border-radius: 50%; }
+.risk-alto .risk-dot  { background: #F43F5E; box-shadow: 0 0 5px #F43F5E; }
+.risk-medio .risk-dot { background: #F59E0B; box-shadow: 0 0 5px #F59E0B; }
+.risk-bajo .risk-dot  { background: #10B981; box-shadow: 0 0 5px #10B981; }
 
 /* ── score bar ── */
-.score-bar-wrap { margin: 4px 0; }
+.score-bar-wrap { min-width: 80px; }
+.score-label { font-size: 12px; color: #E2E8F0; font-weight: 600; margin-bottom: 4px; }
 .score-bar-track {
-    height: 4px; background: rgba(30,58,95,0.4);
-    border-radius: 2px; overflow: hidden;
+    height: 5px;
+    background: rgba(30,41,59,0.8);
+    border-radius: 3px;
+    overflow: hidden;
 }
 .score-bar-fill {
-    height: 100%; border-radius: 2px;
+    height: 100%;
+    border-radius: 3px;
     transition: width 0.6s ease;
 }
 
 /* ── claims table ── */
 .claims-table {
-    width: 100%; border-collapse: collapse;
-    font-size: 12px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
 }
 .claims-table th {
-    text-align: left; padding: 8px 12px;
-    font-size: 10px; font-weight: 600;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    color: #64748B;
-    border-bottom: 1px solid rgba(30,58,95,0.5);
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: #475569;
+    border-bottom: 1px solid rgba(99,102,241,0.15);
+    background: rgba(11,17,32,0.5);
 }
 .claims-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(30,58,95,0.2);
-    color: #94A3B8; vertical-align: middle;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(30,41,59,0.5);
+    color: #94A3B8;
+    vertical-align: middle;
 }
-.claims-table tr:hover td { background: rgba(30,58,95,0.15); }
+.claims-table tr:hover td {
+    background: rgba(99,102,241,0.05);
+    color: #CBD5E1;
+}
 .claim-id {
     font-family: 'Space Mono', monospace;
-    font-size: 11px; color: #3B82F6;
+    font-size: 11px;
+    color: #818CF8;
 }
-.claim-monto { color: #E2E8F0; font-weight: 500; }
+.claim-monto { color: #E2E8F0; font-weight: 600; }
 
-/* ── alerts panel ── */
+/* ── alert items ── */
 .alert-item {
-    background: rgba(239,68,68,0.06);
-    border: 1px solid rgba(239,68,68,0.2);
-    border-left: 3px solid #EF4444;
-    border-radius: 6px; padding: 10px 12px;
-    margin-bottom: 8px;
+    background: rgba(244,63,94,0.05);
+    border: 1px solid rgba(244,63,94,0.18);
+    border-left: 3px solid #F43F5E;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
 }
 .alert-item.medium {
-    background: rgba(245,158,11,0.06);
-    border-color: rgba(245,158,11,0.2);
+    background: rgba(245,158,11,0.05);
+    border-color: rgba(245,158,11,0.18);
     border-left-color: #F59E0B;
 }
 .alert-id {
     font-family: 'Space Mono', monospace;
-    font-size: 10px; color: #94A3B8;
+    font-size: 10px;
+    color: #94A3B8;
+    margin-bottom: 4px;
 }
-.alert-desc { font-size: 12px; color: #CBD5E1; margin-top: 3px; }
+.alert-desc { font-size: 12px; color: #CBD5E1; line-height: 1.5; }
+.alert-explain {
+    font-size: 11px;
+    color: #64748B;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(30,41,59,0.5);
+    line-height: 1.5;
+    font-style: italic;
+}
 
-/* ── form modal ── */
-.form-overlay {
-    position: fixed; inset: 0; z-index: 1000;
-    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-    display: flex; align-items: center; justify-content: center;
+/* ── chart card ── */
+.chart-card {
+    background: #0B1120;
+    border: 1px solid rgba(99,102,241,0.12);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 20px;
 }
-.form-modal {
-    background: #0D1220;
-    border: 1px solid rgba(59,130,246,0.3);
-    border-radius: 12px; padding: 28px 32px;
-    width: 640px; max-height: 90vh; overflow-y: auto;
-    box-shadow: 0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(59,130,246,0.1);
+
+/* ── explain card ── */
+.explain-card {
+    background: #0B1120;
+    border: 1px solid rgba(99,102,241,0.2);
+    border-left: 3px solid #6366F1;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-top: 12px;
 }
-.form-title {
+.explain-card h5 {
     font-family: 'Syne', sans-serif;
-    font-weight: 800; font-size: 18px; color: #fff;
-    margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+    font-size: 11px;
+    color: #818CF8;
+    margin: 0 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.explain-card p { font-size: 13px; color: #94A3B8; line-height: 1.7; margin: 0; }
+
+/* ── info card (nlp, ahorro) ── */
+.info-card {
+    background: #0B1120;
+    border: 1px solid rgba(99,102,241,0.12);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+}
+.info-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    color: #818CF8;
+    font-weight: 700;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
-/* ── streamlit overrides ── */
+/* ── savings card ── */
+.savings-card {
+    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(34,211,238,0.08));
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+.savings-amount {
+    font-family: 'Syne', sans-serif;
+    font-size: 40px;
+    font-weight: 800;
+    color: #22D3EE;
+    letter-spacing: -1px;
+    line-height: 1;
+    margin: 8px 0 4px;
+}
+.savings-label {
+    font-size: 11px;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* ── ranking bar ── */
+.rank-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.rank-label { font-size: 12px; color: #CBD5E1; width: 160px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-bar-track { flex: 1; height: 8px; background: rgba(30,41,59,0.8); border-radius: 4px; overflow: hidden; }
+.rank-bar-fill { height: 100%; border-radius: 4px; }
+.rank-count { font-size: 11px; color: #64748B; font-family: 'Space Mono', monospace; min-width: 28px; text-align: right; }
+
+/* ── tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent !important;
+    border-bottom: 1px solid rgba(99,102,241,0.2) !important;
+    gap: 0 !important;
+    padding: 0 !important;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    color: #475569 !important;
+    border: none !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    padding: 10px 18px !important;
+    font-family: 'Inter', sans-serif !important;
+    border-radius: 0 !important;
+}
+.stTabs [aria-selected="true"] {
+    color: #818CF8 !important;
+    border-bottom: 2px solid #6366F1 !important;
+}
+
+/* ── streamlit form inputs ── */
 .stTextInput > div > div > input,
 .stSelectbox > div > div > div,
 .stNumberInput > div > div > input,
 .stTextArea > div > div > textarea,
 .stDateInput > div > div > input {
-    background: rgba(13,18,32,0.8) !important;
-    border: 1px solid rgba(30,58,95,0.6) !important;
-    color: #C8D4E8 !important;
-    border-radius: 6px !important;
+    background: rgba(11,17,32,0.9) !important;
+    border: 1px solid rgba(99,102,241,0.2) !important;
+    color: #CBD5E1 !important;
+    border-radius: 8px !important;
     font-family: 'Inter', sans-serif !important;
     font-size: 13px !important;
 }
 .stTextInput > div > div > input:focus,
 .stTextArea > div > div > textarea:focus {
-    border-color: rgba(59,130,246,0.6) !important;
-    box-shadow: 0 0 0 2px rgba(59,130,246,0.1) !important;
+    border-color: rgba(99,102,241,0.55) !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.1) !important;
 }
 label[data-baseweb="label"], .stTextInput label,
 .stSelectbox label, .stNumberInput label,
@@ -306,148 +529,92 @@ label[data-baseweb="label"], .stTextInput label,
     text-transform: uppercase !important;
 }
 .stButton > button {
-    border-radius: 6px !important;
+    border-radius: 8px !important;
     font-family: 'Inter', sans-serif !important;
     font-weight: 500 !important;
     transition: all 0.2s !important;
+    font-size: 13px !important;
 }
-
-/* primary button */
 .stButton > button[kind="primary"],
 .stFormSubmitButton > button {
-    background: linear-gradient(135deg, #2563EB, #1D4ED8) !important;
-    color: #fff !important; border: none !important;
-    box-shadow: 0 4px 15px rgba(37,99,235,0.3) !important;
+    background: linear-gradient(135deg, #4F46E5, #6366F1) !important;
+    color: #fff !important;
+    border: none !important;
+    box-shadow: 0 4px 15px rgba(99,102,241,0.3) !important;
 }
 .stButton > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #3B82F6, #2563EB) !important;
+    background: linear-gradient(135deg, #6366F1, #818CF8) !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(37,99,235,0.4) !important;
+    box-shadow: 0 6px 24px rgba(99,102,241,0.45) !important;
 }
 
 /* ── chat ── */
-.chat-wrap { display: flex; flex-direction: column; height: 100%; gap: 12px; }
-.chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .chat-bubble {
-    padding: 10px 14px; border-radius: 10px;
-    font-size: 12px; line-height: 1.5; max-width: 90%;
+    padding: 11px 15px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 92%;
+    margin-bottom: 2px;
 }
 .chat-bubble.user {
-    background: rgba(37,99,235,0.2);
-    border: 1px solid rgba(59,130,246,0.3);
-    color: #BFDBFE; align-self: flex-end;
+    background: rgba(99,102,241,0.18);
+    border: 1px solid rgba(99,102,241,0.3);
+    color: #C7D2FE;
+    align-self: flex-end;
     border-bottom-right-radius: 3px;
 }
 .chat-bubble.ai {
-    background: rgba(13,18,32,0.9);
-    border: 1px solid rgba(30,58,95,0.5);
-    color: #CBD5E1; align-self: flex-start;
+    background: rgba(11,17,32,0.9);
+    border: 1px solid rgba(99,102,241,0.15);
+    color: #CBD5E1;
+    align-self: flex-start;
     border-bottom-left-radius: 3px;
 }
 .chat-label {
-    font-size: 9px; color: #475569;
+    font-size: 9px;
+    color: #334155;
     font-family: 'Space Mono', monospace;
     margin-bottom: 3px;
-}
-.chat-quick-btn {
-    background: rgba(30,58,95,0.3);
-    border: 1px solid rgba(59,130,246,0.2);
-    color: #60A5FA; padding: 5px 10px;
-    border-radius: 15px; font-size: 10px;
-    cursor: pointer; margin: 2px;
-    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }
 
 /* ── login ── */
 .login-wrap {
-    min-height: 100vh; display: flex;
-    align-items: center; justify-content: center;
-    background: #070B14;
-    background-image: radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.3) 0%, transparent 60%),
-                      radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.15) 0%, transparent 50%);
-}
-.login-card {
-    background: rgba(13,18,32,0.95);
-    border: 1px solid rgba(30,58,95,0.6);
-    border-radius: 16px; padding: 48px 40px;
-    width: 400px;
-    box-shadow: 0 40px 100px rgba(0,0,0,0.5), 0 0 0 1px rgba(59,130,246,0.08);
-}
-.login-logo {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800; font-size: 28px;
-    color: #fff; text-align: center; margin-bottom: 4px;
-}
-.login-logo span { color: #3B82F6; }
-.login-sub {
-    text-align: center; font-size: 12px; color: #475569;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    font-family: 'Space Mono', monospace;
-    margin-bottom: 32px;
-}
-.login-divider {
-    height: 1px; background: rgba(30,58,95,0.5);
-    margin: 20px 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #060A12;
+    background-image:
+        radial-gradient(ellipse at 15% 50%, rgba(99,102,241,0.18) 0%, transparent 60%),
+        radial-gradient(ellipse at 85% 20%, rgba(34,211,238,0.1) 0%, transparent 50%);
 }
 
-/* ── new claim button ── */
-.new-claim-btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-    color: #fff; padding: 10px 20px;
-    border-radius: 8px; font-size: 13px; font-weight: 600;
-    cursor: pointer; border: none;
-    box-shadow: 0 4px 20px rgba(37,99,235,0.35);
-    transition: all 0.2s;
-    font-family: 'Inter', sans-serif;
+/* ── network graph legend ── */
+.net-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: #64748B;
+    margin-top: 8px;
 }
-.new-claim-btn:hover {
-    background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 24px rgba(37,99,235,0.45);
-}
-
-/* ── tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: transparent !important;
-    border-bottom: 1px solid rgba(30,58,95,0.4) !important;
-    gap: 0 !important;
-}
-.stTabs [data-baseweb="tab"] {
-    background: transparent !important;
-    color: #64748B !important;
-    border: none !important;
-    font-size: 12px !important;
-    font-weight: 500 !important;
-    padding: 10px 18px !important;
-    font-family: 'Inter', sans-serif !important;
-}
-.stTabs [aria-selected="true"] {
-    color: #3B82F6 !important;
-    border-bottom: 2px solid #3B82F6 !important;
+.net-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
 }
 
-/* chart container */
-.chart-card {
-    background: rgba(13,18,32,0.9);
-    border: 1px solid rgba(30,58,95,0.5);
-    border-radius: 10px; padding: 16px;
-    margin-bottom: 16px;
+/* ── separator ── */
+.ais-separator {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(99,102,241,0.2), transparent);
+    margin: 24px 0;
 }
-
-/* ── explanation card ── */
-.explain-card {
-    background: rgba(13,18,32,0.9);
-    border: 1px solid rgba(30,58,95,0.5);
-    border-left: 3px solid #3B82F6;
-    border-radius: 8px; padding: 14px 16px;
-}
-.explain-card h5 {
-    font-family: 'Syne', sans-serif;
-    font-size: 12px; color: #3B82F6; margin: 0 0 8px;
-    text-transform: uppercase; letter-spacing: 0.08em;
-}
-.explain-card p { font-size: 12px; color: #94A3B8; line-height: 1.6; margin: 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -460,10 +627,11 @@ def init_state():
         "username": "",
         "show_form": False,
         "siniestros": [],
-        "chat_history": [],  # [{role, content}]
+        "chat_history": [],
         "selected_id": None,
         "filter_risk": "Todos",
         "search_query": "",
+        "ahorro_tasa": 30,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -474,80 +642,90 @@ def init_state():
 init_state()
 
 # ═══════════════════════════════════════════════════════════════
-# helpers
+# HELPERS
 # ═══════════════════════════════════════════════════════════════
 def risk_pill_html(nivel: str) -> str:
     cls = {"Alto": "risk-alto", "Medio": "risk-medio", "Bajo": "risk-bajo"}.get(nivel, "risk-bajo")
     return f'<span class="risk-pill {cls}"><span class="risk-dot"></span>{nivel}</span>'
 
 def score_bar_html(score: int) -> str:
-    color = "#EF4444" if score >= 70 else "#F59E0B" if score >= 40 else "#10B981"
+    color = "#F43F5E" if score >= 70 else "#F59E0B" if score >= 40 else "#10B981"
     return f"""
     <div class="score-bar-wrap">
-      <div style="font-size:11px;color:#E2E8F0;font-weight:600;margin-bottom:3px;">{score}</div>
+      <div class="score-label">{score}</div>
       <div class="score-bar-track">
         <div class="score-bar-fill" style="width:{score}%;background:{color};"></div>
       </div>
     </div>"""
 
-def analizar_siniestro(s: dict) -> dict:
-    """Pipeline de análisis completo en modo local."""
-    try:
-        from src.rules.fraud_rules import evaluar_todas_las_reglas
-        from src.models.fraud_model import calcular_score_ml
-        from src.features.build_features import detectar_narrativas_similares, construir_features_completas
+def generar_explicacion_alerta(s: dict) -> str:
+    """Genera automáticamente una explicación textual de la alerta del siniestro."""
+    alertas = s.get("alertas", [])
+    nivel = s.get("nivel_riesgo", "Bajo")
+    score = s.get("score_riesgo", 0)
+    monto = s.get("monto_reclamado", 0)
+    historial = s.get("historial_reclamos", s.get("historial_siniestros_asegurado", 0))
+    dias_entre = s.get("dias_entre_ocurrencia_reporte", 0)
+    ramo = s.get("ramo", s.get("tipo_siniestro", "desconocido"))
 
-        narrativas_prev = [x.get("narrativa", "") for x in st.session_state["siniestros"] if x.get("id") != s.get("id")]
+    partes = []
+    if nivel == "Alto":
+        partes.append(f"Este siniestro presenta un <b>score de riesgo elevado ({score}/100)</b>, lo que lo clasifica como <b>Alto riesgo</b>.")
+    elif nivel == "Medio":
+        partes.append(f"Este siniestro tiene <b>indicadores de riesgo moderado (score {score}/100)</b>, requiriendo seguimiento.")
+    else:
+        partes.append(f"Este siniestro muestra <b>patrones normales (score {score}/100)</b> dentro del ramo {ramo}.")
 
-        res_reglas = evaluar_todas_las_reglas(s)
-        res_ml = calcular_score_ml(s)
-        res_nlp = detectar_narrativas_similares(s.get("narrativa", ""), narrativas_prev)
-        features = construir_features_completas(s, res_reglas, res_ml, res_nlp)
+    if monto > 15000:
+        partes.append(f"El monto reclamado de <b>${monto:,.0f}</b> es significativamente alto para el ramo {ramo}.")
+    if historial and historial > 3:
+        partes.append(f"El asegurado registra <b>{historial} siniestros previos</b>, un volumen superior al promedio.")
+    if dias_entre and dias_entre > 15:
+        partes.append(f"El reporte se realizó <b>{dias_entre} días después del incidente</b>, un plazo inusualmente largo.")
+    if alertas:
+        partes.append(f"Se activaron <b>{len(alertas)} regla(s) de negocio</b>: {'; '.join(alertas[:2])}.")
 
-        s["score_riesgo"] = features["score_final"]
-        s["nivel_riesgo"] = features["nivel_riesgo"]
-        s["alertas"] = features["alertas"]
-        return s
-    except Exception:
-        return s
+    if not partes:
+        partes.append("No se detectaron indicadores de riesgo significativos en este caso.")
+
+    return " ".join(partes)
+
 
 # ═══════════════════════════════════════════════════════════════
 # LOGIN PAGE
 # ═══════════════════════════════════════════════════════════════
 def page_login():
-    st.markdown("""
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:#070B14;background-image:radial-gradient(ellipse at 20% 50%,rgba(30,58,95,0.3) 0%,transparent 60%),
-    radial-gradient(ellipse at 80% 20%,rgba(37,99,235,0.15) 0%,transparent 50%);">
-    </div>""", unsafe_allow_html=True)
-
     col_pad, col_form, col_pad2 = st.columns([1, 1.2, 1])
     with col_form:
-        st.markdown('<div style="height:15vh"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:12vh"></div>', unsafe_allow_html=True)
         st.markdown("""
-        <div style="text-align:center;margin-bottom:32px;">
-            <div style="font-family:Syne,sans-serif;font-weight:800;font-size:36px;color:#fff;letter-spacing:-1px;">
-                Fraud<span style="color:#3B82F6">IA</span>
+        <div style="text-align:center;margin-bottom:36px;">
+            <div style="font-family:Syne,sans-serif;font-weight:800;font-size:42px;
+            color:#fff;letter-spacing:-1.5px;line-height:1;">
+                AIS<span style="color:#6366F1">·</span>
             </div>
-            <div style="font-size:11px;color:#475569;letter-spacing:0.15em;text-transform:uppercase;
-            font-family:'Space Mono',monospace;margin-top:6px;">
-                Claims Intelligence Platform
+            <div style="font-size:13px;color:#475569;letter-spacing:0.05em;margin-top:6px;">
+                Análisis Inteligente de Siniestros
+            </div>
+            <div style="font-size:10px;color:#334155;letter-spacing:0.14em;text-transform:uppercase;
+            font-family:'Space Mono',monospace;margin-top:10px;">
+                Plataforma Antifraude · v2.0
             </div>
         </div>""", unsafe_allow_html=True)
 
         st.markdown("""
-        <div style="background:rgba(13,18,32,0.95);border:1px solid rgba(30,58,95,0.6);
+        <div style="background:#0B1120;border:1px solid rgba(99,102,241,0.2);
         border-radius:16px;padding:36px 32px;
-        box-shadow:0 40px 100px rgba(0,0,0,0.5),0 0 0 1px rgba(59,130,246,0.08);">
+        box-shadow:0 40px 100px rgba(0,0,0,0.5),0 0 60px rgba(99,102,241,0.04);">
         """, unsafe_allow_html=True)
 
         with st.form("login_form"):
             st.markdown('<p style="font-size:11px;color:#64748B;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;">Usuario</p>', unsafe_allow_html=True)
             username = st.text_input("", placeholder="analista@empresa.com", label_visibility="collapsed")
-            st.markdown('<p style="font-size:11px;color:#64748B;letter-spacing:0.08em;text-transform:uppercase;margin:12px 0 4px;">Contraseña</p>', unsafe_allow_html=True)
+            st.markdown('<p style="font-size:11px;color:#64748B;letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 4px;">Contraseña</p>', unsafe_allow_html=True)
             password = st.text_input("", type="password", placeholder="••••••••••", label_visibility="collapsed")
-            st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-            submitted = st.form_submit_button("Iniciar sesión →", use_container_width=True, type="primary")
+            st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
+            submitted = st.form_submit_button("Acceder al sistema →", use_container_width=True, type="primary")
 
             if submitted:
                 if username and password:
@@ -558,13 +736,12 @@ def page_login():
                     st.error("Ingresa usuario y contraseña.")
 
         st.markdown("""
-        <div style="margin-top:16px;padding:10px 14px;background:rgba(30,58,95,0.2);
-        border-radius:6px;border:1px solid rgba(30,58,95,0.4);">
-            <p style="font-size:10px;color:#475569;margin:0;font-family:'Space Mono',monospace;">
+        <div style="margin-top:18px;padding:10px 14px;background:rgba(99,102,241,0.06);
+        border-radius:8px;border:1px solid rgba(99,102,241,0.15);">
+            <p style="font-size:10px;color:#334155;margin:0;font-family:'Space Mono',monospace;">
             DEMO — Ingresa cualquier usuario y contraseña para continuar
             </p>
         </div>""", unsafe_allow_html=True)
-
         st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -575,23 +752,30 @@ def render_topbar():
     col_logo, col_mid, col_right = st.columns([2, 4, 2])
     with col_logo:
         st.markdown("""
-        <div style="padding:12px 0;font-family:Syne,sans-serif;font-weight:800;font-size:18px;color:#fff;">
-            Fraud<span style="color:#3B82F6">IA</span>
-            <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;
-            font-weight:400;margin-left:8px;vertical-align:middle;">CLAIMS v1.0</span>
+        <div style="padding:14px 0;">
+          <span style="font-family:Syne,sans-serif;font-weight:800;font-size:20px;color:#fff;letter-spacing:-0.5px;">
+            AIS<span style="color:#6366F1;">·</span>
+          </span>
+          <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;
+          margin-left:10px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.2);
+          padding:3px 8px;border-radius:4px;letter-spacing:0.06em;">
+          ANÁLISIS INTELIGENTE DE SINIESTROS
+          </span>
         </div>""", unsafe_allow_html=True)
     with col_mid:
         st.markdown("""
-        <div style="display:flex;align-items:center;gap:8px;padding:12px 0;">
-            <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;">SISTEMA ACTIVO</span>
-            <span style="width:6px;height:6px;border-radius:50%;background:#10B981;
-            box-shadow:0 0 6px #10B981;display:inline-block;"></span>
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 0;">
+            <span class="ais-status-dot" style="width:7px;height:7px;border-radius:50%;
+            background:#10B981;box-shadow:0 0 8px #10B981;display:inline-block;"></span>
+            <span style="font-size:10px;color:#475569;font-family:'Space Mono',monospace;letter-spacing:0.1em;">
+            SISTEMA ACTIVO
+            </span>
         </div>""", unsafe_allow_html=True)
     with col_right:
         c1, c2 = st.columns([3, 1])
         with c1:
             st.markdown(f"""
-            <div style="padding:12px 0;text-align:right;font-size:11px;color:#64748B;
+            <div style="padding:14px 0;text-align:right;font-size:11px;color:#64748B;
             font-family:'Space Mono',monospace;">
                 {st.session_state.get('username','Analista')}
             </div>""", unsafe_allow_html=True)
@@ -600,33 +784,47 @@ def render_topbar():
                 st.session_state["logged_in"] = False
                 st.rerun()
 
-    st.markdown('<hr style="margin:0 0 20px;border:none;border-top:1px solid rgba(30,58,95,0.5);">', unsafe_allow_html=True)
+    st.markdown('<hr style="margin:0 0 28px;border:none;border-top:1px solid rgba(99,102,241,0.15);">', unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
-# KPI SECTION
+# KPI SECTION — jerarquía visual mejorada
 # ═══════════════════════════════════════════════════════════════
 def render_kpis(data: list):
     total = len(data)
-    altos = sum(1 for s in data if s.get("nivel_riesgo") == "Alto")
+    altos  = sum(1 for s in data if s.get("nivel_riesgo") == "Alto")
     medios = sum(1 for s in data if s.get("nivel_riesgo") == "Medio")
-    monto = sum(s.get("monto_reclamado", 0) for s in data)
+    monto  = sum(s.get("monto_reclamado", 0) for s in data)
     score_avg = sum(s.get("score_riesgo", 0) for s in data) / total if total else 0
+    pct_alto = f"{altos/total*100:.0f}%" if total else "—"
 
+    st.markdown('<div class="ais-section-title">Métricas del portafolio</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
+
     cards = [
-        (c1, "blue", "Total siniestros", str(total), f"{medios} en revisión"),
-        (c2, "red", "Riesgo alto", str(altos), f"{altos/total*100:.0f}% del portafolio" if total else "—"),
-        (c3, "amber", "Score promedio", f"{score_avg:.0f}", "Índice de riesgo global"),
-        (c4, "green", "Monto total", f"${monto:,.0f}", "Suma reclamada"),
+        (c1, "indigo", "🗂️", "Total de siniestros", str(total),
+         f"{medios} en seguimiento", f"{medios} revisión", "indigo"),
+        (c2, "red", "🚨", "Riesgo alto", str(altos),
+         "Casos críticos activos", pct_alto, "red"),
+        (c3, "amber", "📊", "Score de riesgo", f"{score_avg:.0f}",
+         "Promedio del portafolio", "Índice global", "amber"),
+        (c4, "cyan", "💰", "Monto reclamado", f"${monto/1000:.0f}K" if monto >= 1000 else f"${monto:,.0f}",
+         "Suma total reclamada", "USD", "cyan"),
     ]
-    for col, cls, label, val, sub in cards:
+
+    for col, cls, icon, label, val, sub, badge, badge_cls in cards:
         with col:
             st.markdown(f"""
             <div class="kpi-card {cls}">
+              <div class="kpi-top-row">
                 <div class="kpi-label">{label}</div>
-                <div class="kpi-value">{val}</div>
+                <div class="kpi-icon">{icon}</div>
+              </div>
+              <div class="kpi-value{'  small' if len(val) > 5 else ''}">{val}</div>
+              <div class="kpi-footer">
                 <div class="kpi-sub">{sub}</div>
+                <div class="kpi-badge {badge_cls}">{badge}</div>
+              </div>
             </div>""", unsafe_allow_html=True)
 
 
@@ -635,57 +833,351 @@ def render_kpis(data: list):
 # ═══════════════════════════════════════════════════════════════
 def render_charts(data: list):
     if not PLOTLY or not data:
+        st.info("Instala plotly para ver los gráficos: pip install plotly")
         return
 
     df = pd.DataFrame(data)
-
     col1, col2 = st.columns(2)
 
     # Risk distribution donut
     with col1:
-        st.markdown('<div class="section-title">Distribución de riesgo</div>', unsafe_allow_html=True)
-        risk_counts = df["nivel_riesgo"].value_counts()
-        colors = {"Alto": "#EF4444", "Medio": "#F59E0B", "Bajo": "#10B981"}
-        fig = go.Figure(go.Pie(
-            labels=risk_counts.index.tolist(),
-            values=risk_counts.values.tolist(),
-            hole=0.65,
-            marker_colors=[colors.get(l, "#64748B") for l in risk_counts.index],
-            textinfo="percent",
-            textfont=dict(size=11, color="#C8D4E8"),
-            hovertemplate="<b>%{label}</b><br>%{value} casos<extra></extra>",
-        ))
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            showlegend=True,
-            legend=dict(font=dict(color="#64748B", size=11), bgcolor="rgba(0,0,0,0)"),
-            margin=dict(l=0, r=0, t=10, b=10), height=200,
-            annotations=[dict(text=f"<b style='font-size:22px'>{len(df)}</b><br><span style='font-size:11px'>casos</span>",
-                              showarrow=False, font=dict(color="#fff", size=14))]
-        )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown('<div class="ais-section-title">Distribución de riesgo</div>', unsafe_allow_html=True)
+        risk_counts = df["nivel_riesgo"].value_counts() if "nivel_riesgo" in df.columns else pd.Series()
+        colors = {"Alto": "#F43F5E", "Medio": "#F59E0B", "Bajo": "#10B981"}
+        if not risk_counts.empty:
+            fig = go.Figure(go.Pie(
+                labels=risk_counts.index.tolist(),
+                values=risk_counts.values.tolist(),
+                hole=0.68,
+                marker_colors=[colors.get(l, "#6366F1") for l in risk_counts.index],
+                textinfo="percent",
+                textfont=dict(size=11, color="#CBD5E1"),
+                hovertemplate="<b>%{label}</b><br>%{value} casos<extra></extra>",
+            ))
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                showlegend=True,
+                legend=dict(font=dict(color="#64748B", size=11), bgcolor="rgba(0,0,0,0)"),
+                margin=dict(l=0, r=0, t=10, b=10), height=220,
+                annotations=[dict(
+                    text=f"<b>{len(df)}</b><br><span style='font-size:10px'>casos</span>",
+                    showarrow=False, font=dict(color="#E2E8F0", size=18)
+                )]
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Score histogram
     with col2:
-        st.markdown('<div class="section-title">Score de riesgo</div>', unsafe_allow_html=True)
-        fig2 = go.Figure(go.Histogram(
-            x=df["score_riesgo"].tolist(),
-            nbinsx=10,
+        st.markdown('<div class="ais-section-title">Distribución de scores</div>', unsafe_allow_html=True)
+        if "score_riesgo" in df.columns:
+            scores = df["score_riesgo"].dropna().tolist()
+            fig2 = go.Figure(go.Histogram(
+                x=scores,
+                nbinsx=12,
+                marker_color="#6366F1",
+                marker_line=dict(color="rgba(0,0,0,0)", width=0),
+                opacity=0.85,
+                hovertemplate="Score: %{x}<br>Casos: %{y}<extra></extra>",
+            ))
+            fig2.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(showgrid=False, color="#475569", tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True, gridcolor="rgba(99,102,241,0.08)",
+                           color="#475569", tickfont=dict(size=10)),
+                margin=dict(l=0, r=0, t=10, b=30), height=220,
+                bargap=0.15,
+            )
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+
+    # Ramo breakdown
+    if "ramo" in df.columns or "tipo_siniestro" in df.columns:
+        campo_ramo = "ramo" if "ramo" in df.columns else "tipo_siniestro"
+        st.markdown('<div class="ais-section-title" style="margin-top:12px;">Siniestros por ramo</div>', unsafe_allow_html=True)
+        ramo_counts = df[campo_ramo].value_counts().head(8)
+        fig3 = go.Figure(go.Bar(
+            x=ramo_counts.values.tolist(),
+            y=ramo_counts.index.tolist(),
+            orientation="h",
             marker=dict(
-                color=df["score_riesgo"].tolist(),
-                colorscale=[[0, "#10B981"], [0.4, "#F59E0B"], [1, "#EF4444"]],
-                line=dict(color="rgba(0,0,0,0)", width=0),
+                color=ramo_counts.values.tolist(),
+                colorscale=[[0, "#22D3EE"], [1, "#6366F1"]],
+                line=dict(color="rgba(0,0,0,0)"),
             ),
-            hovertemplate="Score: %{x}<br>Casos: %{y}<extra></extra>",
+            hovertemplate="%{y}: %{x} casos<extra></extra>",
         ))
-        fig2.update_layout(
+        fig3.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            xaxis=dict(showgrid=False, color="#475569", tickfont=dict(size=10)),
-            yaxis=dict(showgrid=True, gridcolor="rgba(30,58,95,0.3)", color="#475569", tickfont=dict(size=10)),
-            margin=dict(l=0, r=0, t=10, b=30), height=200,
-            bargap=0.1,
+            xaxis=dict(showgrid=True, gridcolor="rgba(99,102,241,0.08)", color="#475569", tickfont=dict(size=10)),
+            yaxis=dict(showgrid=False, color="#CBD5E1", tickfont=dict(size=11)),
+            margin=dict(l=0, r=0, t=10, b=20), height=240,
         )
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+
+
+# ═══════════════════════════════════════════════════════════════
+# RANKING DE PROVEEDORES
+# ═══════════════════════════════════════════════════════════════
+def render_ranking_proveedores(data: list):
+    st.markdown('<div class="ais-section-title">Ranking de proveedores por concentración de alertas</div>', unsafe_allow_html=True)
+
+    if not data:
+        st.info("Sin datos disponibles.")
+        return
+
+    # Agrupar por proveedor
+    prov_stats: dict = {}
+    for s in data:
+        prov = s.get("proveedor", "") or s.get("beneficiario", "Sin especificar")
+        if not prov or prov in ("Sin especificar", "sin especificar", ""):
+            prov = "Sin especificar"
+        if prov not in prov_stats:
+            prov_stats[prov] = {"total": 0, "altos": 0, "monto": 0.0}
+        prov_stats[prov]["total"] += 1
+        if s.get("nivel_riesgo") == "Alto":
+            prov_stats[prov]["altos"] += 1
+        prov_stats[prov]["monto"] += s.get("monto_reclamado", 0)
+
+    # Ordenar por número de alertas alto
+    ranked = sorted(prov_stats.items(), key=lambda x: x[1]["altos"], reverse=True)[:10]
+
+    if not ranked:
+        st.info("No hay datos de proveedores.")
+        return
+
+    max_altos = max(v["altos"] for _, v in ranked) or 1
+
+    for prov_name, stats in ranked:
+        pct = stats["altos"] / max_altos
+        color = "#F43F5E" if pct > 0.6 else "#F59E0B" if pct > 0.3 else "#6366F1"
+        st.markdown(f"""
+        <div class="rank-bar-wrap">
+          <div class="rank-label" title="{prov_name}">{prov_name}</div>
+          <div class="rank-bar-track">
+            <div class="rank-bar-fill" style="width:{pct*100:.0f}%;background:{color};"></div>
+          </div>
+          <div class="rank-count">{stats['altos']}🔴</div>
+        </div>""", unsafe_allow_html=True)
+
+    # Tabla resumen
+    st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+    df_rank = pd.DataFrame([
+        {
+            "Proveedor": name,
+            "Total siniestros": v["total"],
+            "Alertas altas": v["altos"],
+            "% Alto riesgo": f"{v['altos']/v['total']*100:.0f}%" if v["total"] else "0%",
+            "Monto total": f"${v['monto']:,.0f}"
+        }
+        for name, v in ranked
+    ])
+    st.dataframe(df_rank, use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# RED DE RELACIONES
+# ═══════════════════════════════════════════════════════════════
+def render_red_relaciones(data: list):
+    st.markdown('<div class="ais-section-title">Red de relaciones — Asegurados · Proveedores · Siniestros</div>', unsafe_allow_html=True)
+
+    if not PLOTLY or not data:
+        st.info("Instala plotly para ver la red de relaciones.")
+        return
+
+    import math, random as rnd
+
+    # Build node lists
+    asegurados = list({s.get("cliente", s.get("id_asegurado", "?")) for s in data})
+    proveedores = list({s.get("proveedor", "Sin proveedor") or "Sin proveedor" for s in data})
+
+    n_a = len(asegurados)
+    n_p = len(proveedores)
+
+    # Positions: asegurados in a circle on left, proveedores on right
+    a_pos = {a: (rnd.uniform(-3, -1), rnd.uniform(-n_a/2, n_a/2)) for a in asegurados}
+    p_pos = {p: (rnd.uniform(1, 3), rnd.uniform(-n_p/2, n_p/2)) for p in proveedores}
+
+    edge_x, edge_y = [], []
+    for s in data:
+        a = s.get("cliente", s.get("id_asegurado", "?"))
+        p = s.get("proveedor", "Sin proveedor") or "Sin proveedor"
+        if a in a_pos and p in p_pos:
+            ax, ay = a_pos[a]
+            px, py = p_pos[p]
+            edge_x += [ax, px, None]
+            edge_y += [ay, py, None]
+
+    traces = []
+    # Edges
+    traces.append(go.Scatter(
+        x=edge_x, y=edge_y, mode="lines",
+        line=dict(color="rgba(99,102,241,0.2)", width=1),
+        hoverinfo="none", showlegend=False
+    ))
+
+    # Asegurado nodes
+    a_x = [a_pos[a][0] for a in asegurados]
+    a_y = [a_pos[a][1] for a in asegurados]
+    traces.append(go.Scatter(
+        x=a_x, y=a_y, mode="markers+text",
+        marker=dict(size=14, color="#6366F1", line=dict(color="#818CF8", width=1.5)),
+        text=[a[:12] for a in asegurados],
+        textposition="top center",
+        textfont=dict(size=9, color="#94A3B8"),
+        hovertemplate="Asegurado: %{text}<extra></extra>",
+        name="Asegurado"
+    ))
+
+    # Proveedor nodes
+    p_x = [p_pos[p][0] for p in proveedores]
+    p_y = [p_pos[p][1] for p in proveedores]
+    traces.append(go.Scatter(
+        x=p_x, y=p_y, mode="markers+text",
+        marker=dict(size=12, color="#22D3EE", symbol="diamond",
+                    line=dict(color="#67E8F9", width=1.5)),
+        text=[p[:12] for p in proveedores],
+        textposition="bottom center",
+        textfont=dict(size=9, color="#94A3B8"),
+        hovertemplate="Proveedor: %{text}<extra></extra>",
+        name="Proveedor"
+    ))
+
+    # Alto riesgo siniestros (middle)
+    altos = [s for s in data if s.get("nivel_riesgo") == "Alto"]
+    if altos:
+        s_x = [rnd.uniform(-0.5, 0.5) for _ in altos]
+        s_y = [rnd.uniform(-len(altos)/2, len(altos)/2) for _ in altos]
+        traces.append(go.Scatter(
+            x=s_x, y=s_y, mode="markers",
+            marker=dict(size=9, color="#F43F5E", symbol="x",
+                        line=dict(color="#FB7185", width=1)),
+            hovertemplate="Siniestro alto riesgo: %{customdata}<extra></extra>",
+            customdata=[s.get("id_siniestro","?") for s in altos],
+            name="Siniestro Alto Riesgo"
+        ))
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        legend=dict(font=dict(color="#64748B", size=10), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=0, r=0, t=10, b=10),
+        height=380,
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown("""
+    <div class="net-legend">
+        <span><span class="net-dot" style="background:#6366F1;"></span>Asegurado</span>
+        <span><span class="net-dot" style="background:#22D3EE;"></span>Proveedor</span>
+        <span><span class="net-dot" style="background:#F43F5E;"></span>Siniestro alto riesgo</span>
+        <span><span class="net-dot" style="background:rgba(99,102,241,0.5);"></span>Relación</span>
+    </div>""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIMULACIÓN DE AHORRO
+# ═══════════════════════════════════════════════════════════════
+def render_simulacion_ahorro(data: list):
+    st.markdown('<div class="ais-section-title">Simulación de ahorro potencial</div>', unsafe_allow_html=True)
+
+    monto_alto = sum(s.get("monto_reclamado", 0) for s in data if s.get("nivel_riesgo") == "Alto")
+    monto_total = sum(s.get("monto_reclamado", 0) for s in data)
+
+    tasa = st.slider(
+        "Tasa estimada de detección de fraude (%)",
+        min_value=5, max_value=80,
+        value=st.session_state.get("ahorro_tasa", 30),
+        step=5,
+        key="slider_ahorro",
+        help="Porcentaje de casos de alto riesgo que resultarían ser fraude real"
+    )
+    st.session_state["ahorro_tasa"] = tasa
+
+    ahorro = monto_alto * (tasa / 100)
+    pct_total = (ahorro / monto_total * 100) if monto_total else 0
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(f"""
+        <div class="savings-card">
+          <div class="savings-label">Ahorro potencial estimado</div>
+          <div class="savings-amount">${ahorro:,.0f}</div>
+          <div class="savings-label">{pct_total:.1f}% del monto total reclamado</div>
+        </div>""", unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"""
+        <div class="info-card">
+          <div class="info-card-title">Desglose</div>
+          <table style="width:100%;font-size:12px;border-collapse:collapse;">
+            <tr><td style="color:#64748B;padding:4px 0;">Monto total reclamado</td>
+                <td style="color:#E2E8F0;text-align:right;font-weight:600;">${monto_total:,.0f}</td></tr>
+            <tr><td style="color:#64748B;padding:4px 0;">Monto en casos Alto Riesgo</td>
+                <td style="color:#F43F5E;text-align:right;font-weight:600;">${monto_alto:,.0f}</td></tr>
+            <tr><td style="color:#64748B;padding:4px 0;">Tasa de detección aplicada</td>
+                <td style="color:#818CF8;text-align:right;font-weight:600;">{tasa}%</td></tr>
+            <tr style="border-top:1px solid rgba(99,102,241,0.2);">
+                <td style="color:#22D3EE;padding:8px 0 0;font-weight:600;">Ahorro estimado</td>
+                <td style="color:#22D3EE;text-align:right;font-weight:700;font-size:14px;padding-top:8px;">${ahorro:,.0f}</td></tr>
+          </table>
+        </div>""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANÁLISIS NLP DEL RECLAMO
+# ═══════════════════════════════════════════════════════════════
+def render_analisis_nlp(s: dict, todos_los_datos: list):
+    st.markdown('<div class="ais-section-title" style="margin-top:18px;">Análisis del texto del reclamo</div>', unsafe_allow_html=True)
+
+    narrativa = s.get("narrativa", s.get("descripcion", ""))
+    if not narrativa:
+        st.markdown('<p style="color:#475569;font-size:12px;">Sin narrativa disponible para analizar.</p>', unsafe_allow_html=True)
+        return
+
+    # Palabras clave de riesgo
+    keywords_riesgo = [
+        "urgente", "inmediato", "accidente", "robo", "quemado", "destruido",
+        "total", "pérdida total", "hospitalización", "emergencia", "colisión",
+        "fallecido", "fallecimiento", "incendio", "fraude", "vehículo",
+    ]
+    palabras_detectadas = [w for w in keywords_riesgo if w.lower() in narrativa.lower()]
+
+    # Similitud simple con otros casos (longitud de narrativa compartida)
+    similares = []
+    for otro in todos_los_datos:
+        if otro.get("id_siniestro") == s.get("id_siniestro"):
+            continue
+        otra_narr = otro.get("narrativa", otro.get("descripcion", ""))
+        if otra_narr and len(otra_narr) > 20:
+            palabras_comunes = set(narrativa.lower().split()) & set(otra_narr.lower().split())
+            score_sim = len(palabras_comunes) / max(len(narrativa.split()), 1)
+            if score_sim > 0.3:
+                similares.append((otro.get("id_siniestro", "?"), score_sim))
+    similares = sorted(similares, key=lambda x: x[1], reverse=True)[:3]
+
+    col_nlp1, col_nlp2 = st.columns(2)
+    with col_nlp1:
+        st.markdown(f"""
+        <div class="info-card">
+          <div class="info-card-title">Palabras clave detectadas ({len(palabras_detectadas)})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+            {''.join([f'<span style="background:rgba(244,63,94,0.12);color:#FB7185;border:1px solid rgba(244,63,94,0.25);padding:3px 9px;border-radius:12px;font-size:11px;">{w}</span>' for w in palabras_detectadas]) if palabras_detectadas else '<span style="color:#475569;font-size:12px;">Sin palabras de alerta detectadas</span>'}
+          </div>
+          <div style="margin-top:14px;">
+            <div style="font-size:10px;color:#64748B;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Narrativa completa</div>
+            <div style="font-size:12px;color:#94A3B8;line-height:1.7;font-style:italic;">"{narrativa[:300]}{'...' if len(narrativa) > 300 else ''}"</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+    with col_nlp2:
+        st.markdown(f"""
+        <div class="info-card">
+          <div class="info-card-title">Casos con narrativa similar</div>
+          {''.join([f'<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(30,41,59,0.4);"><span style="font-family:Space Mono,monospace;font-size:11px;color:#818CF8;">{sid}</span><span style="font-size:11px;color:#F59E0B;">{sim*100:.0f}% similar</span></div>' for sid, sim in similares]) if similares else '<p style="color:#475569;font-size:12px;margin-top:8px;">Sin casos similares detectados en el portafolio actual.</p>'}
+          <div style="margin-top:14px;padding:10px;background:rgba(99,102,241,0.06);border-radius:8px;">
+            <div style="font-size:11px;color:#64748B;">Longitud de narrativa: <span style="color:#CBD5E1;">{len(narrativa)} caracteres</span></div>
+            <div style="font-size:11px;color:#64748B;margin-top:4px;">Palabras únicas: <span style="color:#CBD5E1;">{len(set(narrativa.lower().split()))}</span></div>
+          </div>
+        </div>""", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -693,7 +1185,7 @@ def render_charts(data: list):
 # ═══════════════════════════════════════════════════════════════
 def render_table(data: list):
     if not data:
-        st.markdown('<p style="color:#475569;font-size:13px;">Sin registros.</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color:#475569;font-size:13px;padding:20px 0;">Sin registros.</p>', unsafe_allow_html=True)
         return
 
     rows = ""
@@ -704,13 +1196,17 @@ def render_table(data: list):
         pill = risk_pill_html(nivel)
         bar = score_bar_html(score)
         alert_count = len(alertas)
-        alert_badge = f'<span style="background:rgba(239,68,68,0.15);color:#F87171;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;">{alert_count} alertas</span>' if alert_count else '<span style="color:#374151;font-size:10px;">—</span>'
+        alert_badge = (
+            f'<span style="background:rgba(244,63,94,0.12);color:#FB7185;'
+            f'padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;">'
+            f'{alert_count} alertas</span>'
+        ) if alert_count else '<span style="color:#334155;font-size:10px;">—</span>'
 
         rows += f"""
         <tr>
           <td><span class="claim-id">{s.get('id_siniestro','')}</span></td>
           <td style="color:#E2E8F0;">{s.get('cliente','')}</td>
-          <td style="color:#94A3B8;">{s.get('tipo_siniestro','')}</td>
+          <td style="color:#94A3B8;">{s.get('ramo', s.get('tipo_siniestro',''))}</td>
           <td class="claim-monto">${s.get('monto_reclamado',0):,.0f}</td>
           <td>{pill}</td>
           <td>{bar}</td>
@@ -723,7 +1219,7 @@ def render_table(data: list):
     <table class="claims-table">
       <thead>
         <tr>
-          <th>ID Siniestro</th><th>Cliente</th><th>Tipo</th>
+          <th>ID Siniestro</th><th>Asegurado</th><th>Ramo</th>
           <th>Monto</th><th>Riesgo</th><th>Score</th>
           <th>Alertas</th><th>Ciudad</th>
         </tr>
@@ -734,25 +1230,65 @@ def render_table(data: list):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ALERTS PANEL (right sidebar)
+# EXPORTACIÓN CSV
+# ═══════════════════════════════════════════════════════════════
+def render_export_button(data: list):
+    if not data:
+        return
+    df_exp = pd.DataFrame([
+        {
+            "ID Siniestro": s.get("id_siniestro", ""),
+            "Asegurado": s.get("cliente", s.get("id_asegurado", "")),
+            "Ramo": s.get("ramo", s.get("tipo_siniestro", "")),
+            "Cobertura": s.get("cobertura", ""),
+            "Monto Reclamado": s.get("monto_reclamado", 0),
+            "Monto Estimado": s.get("monto_estimado", 0),
+            "Monto Pagado": s.get("monto_pagado", 0),
+            "Estado": s.get("estado", ""),
+            "Score Riesgo": s.get("score_riesgo", 0),
+            "Nivel Riesgo": s.get("nivel_riesgo", ""),
+            "Alertas": "; ".join(s.get("alertas", [])) if isinstance(s.get("alertas"), list) else "",
+            "Ciudad": s.get("ciudad", ""),
+            "Sucursal": s.get("sucursal", ""),
+            "Fecha Ocurrencia": s.get("fecha_ocurrencia", s.get("fecha_incidente", "")),
+            "Fecha Reporte": s.get("fecha_reporte", ""),
+            "Proveedor": s.get("proveedor", ""),
+        }
+        for s in data
+    ])
+    csv_buffer = io.StringIO()
+    df_exp.to_csv(csv_buffer, index=False, encoding="utf-8-sig")
+    st.download_button(
+        label="📥 Exportar reporte de auditoría (.csv)",
+        data=csv_buffer.getvalue().encode("utf-8-sig"),
+        file_name=f"AIS_reporte_auditoria_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# ALERTS PANEL (right sidebar) — con explicación automática
 # ═══════════════════════════════════════════════════════════════
 def render_alerts_panel(data: list):
-    st.markdown('<div class="section-title">🔴 Alertas activas</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ais-section-title">🔴 Alertas activas</div>', unsafe_allow_html=True)
     altos = [s for s in data if s.get("nivel_riesgo") == "Alto"][:6]
     if not altos:
         st.markdown('<p style="color:#475569;font-size:12px;">Sin alertas activas.</p>', unsafe_allow_html=True)
     for s in altos:
         alertas = s.get("alertas", [])
         desc = alertas[0] if alertas else "Anomalía detectada"
+        explicacion = generar_explicacion_alerta(s)
         st.markdown(f"""
         <div class="alert-item">
             <div class="alert-id">{s.get('id_siniestro')} · ${s.get('monto_reclamado',0):,.0f}</div>
             <div class="alert-desc">{desc}</div>
+            <div class="alert-explain">{explicacion}</div>
         </div>""", unsafe_allow_html=True)
 
     medios = [s for s in data if s.get("nivel_riesgo") == "Medio"][:4]
     if medios:
-        st.markdown('<div class="section-title" style="margin-top:16px;">🟡 Seguimiento</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ais-section-title" style="margin-top:16px;">🟡 En seguimiento</div>', unsafe_allow_html=True)
         for s in medios:
             alertas = s.get("alertas", [])
             desc = alertas[0] if alertas else "Requiere revisión rutinaria"
@@ -764,19 +1300,17 @@ def render_alerts_panel(data: list):
 
 
 # ═══════════════════════════════════════════════════════════════
-# CHAT PANEL (right sidebar)
+# CHAT PANEL
 # ═══════════════════════════════════════════════════════════════
 def render_chat_panel(data: list):
-    st.markdown('<div class="section-title">🤖 Asistente IA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ais-section-title">🤖 Asistente AIS</div>', unsafe_allow_html=True)
 
-    # Suggested questions
     sugerencias = [
         "¿Qué casos priorizar?",
         "¿Narrativas similares?",
         "Resumen de riesgo alto",
         "¿Proveedor con más alertas?",
     ]
-
     cols = st.columns(2)
     for i, sug in enumerate(sugerencias):
         with cols[i % 2]:
@@ -784,23 +1318,21 @@ def render_chat_panel(data: list):
                 st.session_state["chat_history"].append({"role": "user", "content": sug})
                 _send_chat(sug, data)
 
-    # Conversation history
     if st.session_state["chat_history"]:
-        st.markdown('<div style="margin:12px 0 8px;border-top:1px solid rgba(30,58,95,0.4);padding-top:12px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin:12px 0 8px;border-top:1px solid rgba(99,102,241,0.15);padding-top:12px;"></div>', unsafe_allow_html=True)
         for msg in st.session_state["chat_history"][-8:]:
             role = msg["role"]
-            label = "ANALISTA" if role == "user" else "FRAUDIA IA"
+            label = "ANALISTA" if role == "user" else "AIS IA"
             cls = "user" if role == "user" else "ai"
             st.markdown(f"""
-            <div>
+            <div style="display:flex;flex-direction:column;align-items:{'flex-end' if role=='user' else 'flex-start'};margin-bottom:8px;">
               <div class="chat-label">{label}</div>
               <div class="chat-bubble {cls}">{msg['content']}</div>
             </div>""", unsafe_allow_html=True)
 
-    # Input
     st.markdown('<div style="margin-top:12px;"></div>', unsafe_allow_html=True)
     with st.form("chat_form", clear_on_submit=True):
-        query = st.text_input("", placeholder="Consulta al asistente IA…", label_visibility="collapsed")
+        query = st.text_input("", placeholder="Consulta al asistente AIS…", label_visibility="collapsed")
         sent = st.form_submit_button("Enviar →", use_container_width=True, type="primary")
         if sent and query.strip():
             st.session_state["chat_history"].append({"role": "user", "content": query})
@@ -828,36 +1360,35 @@ def _send_chat(pregunta: str, data: list):
 def render_new_claim_form():
     import random
     st.markdown("""
-    <div style="background:rgba(13,18,32,0.98);border:1px solid rgba(59,130,246,0.35);
-    border-radius:12px;padding:24px 28px;margin-bottom:20px;
-    box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 0 1px rgba(59,130,246,0.08);">
+    <div style="background:#0B1120;border:1px solid rgba(99,102,241,0.25);
+    border-radius:14px;padding:28px 32px;margin-bottom:24px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.4),0 0 0 1px rgba(99,102,241,0.05);">
     <div style="font-family:Syne,sans-serif;font-weight:800;font-size:16px;color:#fff;
-    margin-bottom:20px;display:flex;align-items:center;gap:8px;">
+    margin-bottom:22px;display:flex;align-items:center;gap:10px;">
     🛡️ Registrar nuevo siniestro
-    <span style="font-size:10px;color:#3B82F6;font-family:'Space Mono',monospace;
-    font-weight:400;margin-left:4px;background:rgba(59,130,246,0.1);
-    padding:3px 8px;border-radius:4px;">ANÁLISIS AUTOMÁTICO</span>
+    <span style="font-size:10px;color:#818CF8;font-family:'Space Mono',monospace;
+    font-weight:400;background:rgba(99,102,241,0.1);
+    padding:3px 8px;border-radius:4px;border:1px solid rgba(99,102,241,0.2);">ANÁLISIS AUTOMÁTICO AIS</span>
     </div>
     </div>""", unsafe_allow_html=True)
 
     with st.form("form_siniestro", clear_on_submit=True):
-        st.markdown('<p style="color:#3B82F6;font-weight:600;font-size:13px;margin-bottom:10px;">1. Información del Siniestro</p>', unsafe_allow_html=True)
+        st.markdown('<p style="color:#818CF8;font-weight:600;font-size:13px;margin-bottom:12px;">1. Información del Siniestro</p>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            id_sin = st.text_input("ID Siniestro", placeholder="SIN-2024-0021")
+            id_sin  = st.text_input("ID Siniestro", placeholder="SIN-2024-0021")
             id_aseg = st.text_input("ID Asegurado (Debe existir previamente)", placeholder="ASEG-2024-0001")
-            id_pol = st.text_input("ID Póliza (Debe pertenecer al asegurado)", placeholder="POL-2024-0001")
-            ramo = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
+            id_pol  = st.text_input("ID Póliza (Debe pertenecer al asegurado)", placeholder="POL-2024-0001")
+            ramo    = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
             cobertura = st.selectbox("Cobertura / Tipo", ["Choque", "Robo", "Atención médica", "Incendio", "Daño", "Otro"])
-            monto = st.number_input("Monto reclamado ($ USD)", min_value=0.0, step=100.0)
+            monto   = st.number_input("Monto reclamado ($ USD)", min_value=0.0, step=100.0)
             monto_est = st.number_input("Monto estimado ($ USD)", min_value=0.0, step=100.0)
-
         with c2:
             monto_pag = st.number_input("Monto pagado ($ USD)", min_value=0.0, step=100.0)
             estado = st.selectbox("Estado del siniestro", ["Reserva", "Pago Total", "Pago Parcial", "Anticipo", "Negativa", "Cierre Sin Consecuencia", "Liquidado"])
             fecha_ocurrencia = st.date_input("Fecha del incidente (ocurrencia)", value=date.today())
-            fecha_reporte = st.date_input("Fecha del reporte (notificación)", value=date.today())
-            sucursal = st.selectbox("Sucursal del siniestro", [
+            fecha_reporte    = st.date_input("Fecha del reporte (notificación)", value=date.today())
+            sucursal = st.selectbox("Sucursal", [
                 "Sucursal Quito Norte", "Sucursal Guayaquil Centro", "Sucursal Cuenca El Sagrario",
                 "Sucursal Manta Tarqui", "Sucursal Portoviejo Real", "Sucursal Loja Sur",
                 "Sucursal Ambato Ficoa"
@@ -869,24 +1400,24 @@ def render_new_claim_form():
                                    placeholder="Describe detalladamente el incidente reportado…",
                                    height=80)
 
-        st.markdown('<hr style="margin:20px 0 15px;border-top:1px solid rgba(30,58,95,0.4);">', unsafe_allow_html=True)
-        st.markdown('<p style="color:#3B82F6;font-weight:600;font-size:13px;margin-bottom:10px;">2. Documentación Adjunta (Ingreso Manual)</p>', unsafe_allow_html=True)
-        
+        st.markdown('<hr style="margin:20px 0 18px;border-top:1px solid rgba(99,102,241,0.15);">', unsafe_allow_html=True)
+        st.markdown('<p style="color:#818CF8;font-weight:600;font-size:13px;margin-bottom:12px;">2. Documentación Adjunta</p>', unsafe_allow_html=True)
+
         c3, c4 = st.columns(2)
         with c3:
-            tipo_doc = st.selectbox("Tipo de Documento", ["Factura de Reparación", "Cédula del Asegurado", "Informe de Tránsito", "Historia Clínica", "Prescripción Médica", "Otro"])
+            tipo_doc  = st.selectbox("Tipo de Documento", ["Factura de Reparación", "Cédula del Asegurado", "Informe de Tránsito", "Historia Clínica", "Prescripción Médica", "Otro"])
             entregado = st.selectbox("¿Entregado?", ["Sí", "No"])
-            legible = st.selectbox("¿Legible?", ["Sí", "No"])
+            legible   = st.selectbox("¿Legible?", ["Sí", "No"])
         with c4:
-            fecha_emision_doc = st.date_input("Fecha de emisión del documento", value=date.today())
-            inconsistencia_doc = st.selectbox("¿Inconsistencia detectada en documento?", ["No", "Sí"])
-            observacion_doc = st.text_input("Observación del Documento", placeholder="Observación sobre el documento...")
+            fecha_emision_doc   = st.date_input("Fecha de emisión del documento", value=date.today())
+            inconsistencia_doc  = st.selectbox("¿Inconsistencia detectada?", ["No", "Sí"])
+            observacion_doc     = st.text_input("Observación del Documento", placeholder="Observación sobre el documento...")
 
         col_s, col_c = st.columns([2, 1])
         with col_s:
-            submitted = st.form_submit_button("🔍 Registrar, Analizar y Guardar en BD", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("🔍 Registrar, Analizar y Guardar", use_container_width=True, type="primary")
         with col_c:
-            cancelar = st.form_submit_button("Cancelar", use_container_width=True)
+            cancelar  = st.form_submit_button("Cancelar", use_container_width=True)
 
         if cancelar:
             st.session_state["show_form"] = False
@@ -898,52 +1429,43 @@ def render_new_claim_form():
             elif not supabase:
                 st.error("Error: Supabase no está configurado. Configura el archivo .env para continuar.")
             else:
-                with st.spinner("Validando IDs en Supabase y ejecutando análisis de fraude…"):
-                    # 1. Validar Asegurado
+                with st.spinner("Validando IDs en Supabase y ejecutando análisis AIS…"):
                     res_aseg = supabase.table("asegurados").select("*").eq("id_asegurado", id_aseg).execute()
                     if not res_aseg.data:
-                        st.error(f"❌ Error de Validación: El ID de Asegurado '{id_aseg}' no existe en la base de datos.")
+                        st.error(f"❌ El ID de Asegurado '{id_aseg}' no existe en la base de datos.")
                         return
-                    
+
                     asegurado_obj = res_aseg.data[0]
                     nombre_asegurado = asegurado_obj.get("nombre", "Desconocido")
                     ciudad_asegurado = asegurado_obj.get("ciudad", "Ecuador")
                     reclamos_previos = asegurado_obj.get("reclamos_ultimos_12_meses", 0)
-                    
-                    # 2. Validar Póliza
+
                     res_pol = supabase.table("polizas").select("*").eq("id_poliza", id_pol).execute()
                     if not res_pol.data:
-                        st.error(f"❌ Error de Validación: El ID de Póliza '{id_pol}' no existe en la base de datos.")
-                        return
-                    
-                    poliza_obj = res_pol.data[0]
-                    
-                    # 3. Validar que la póliza pertenezca al asegurado
-                    if poliza_obj.get("id_asegurado") != id_aseg:
-                        st.error(f"❌ Error de Validación: La póliza '{id_pol}' no pertenece al asegurado '{id_aseg}' (le pertenece a '{poliza_obj.get('id_asegurado')}').")
+                        st.error(f"❌ El ID de Póliza '{id_pol}' no existe en la base de datos.")
                         return
 
-                    # 4. Calcular campos derivados y coherentes
+                    poliza_obj = res_pol.data[0]
+                    if poliza_obj.get("id_asegurado") != id_aseg:
+                        st.error(f"❌ La póliza '{id_pol}' no pertenece al asegurado '{id_aseg}'.")
+                        return
+
                     fp_inicio = datetime.strptime(poliza_obj.get("fecha_inicio"), "%Y-%m-%d").date()
-                    fp_fin = datetime.strptime(poliza_obj.get("fecha_fin"), "%Y-%m-%d").date()
-                    
+                    fp_fin    = datetime.strptime(poliza_obj.get("fecha_fin"),   "%Y-%m-%d").date()
                     dias_inicio = (fecha_ocurrencia - fp_inicio).days
-                    dias_fin = (fp_fin - fecha_ocurrencia).days
-                    dias_entre = (fecha_reporte - fecha_ocurrencia).days
-                    
-                    # Contar siniestros en BD para historial
+                    dias_fin    = (fp_fin - fecha_ocurrencia).days
+                    dias_entre  = (fecha_reporte - fecha_ocurrencia).days
+
                     historial_count_res = supabase.table("siniestros").select("id", count="exact").eq("id_asegurado", id_aseg).execute()
                     siniestros_en_bd = historial_count_res.count if historial_count_res.count is not None else 0
-                    total_historial = siniestros_en_bd + reclamos_previos
+                    total_historial  = siniestros_en_bd + reclamos_previos
 
-                    # Buscar proveedor_id de compatibilidad
                     prov_id = None
                     if proveedor:
                         res_prov = supabase.table("proveedores").select("id").ilike("nombre", f"%{proveedor}%").limit(1).execute()
                         if res_prov.data:
                             prov_id = res_prov.data[0].get("id")
 
-                    # Preparar objeto siniestro
                     nuevo = {
                         "id_siniestro": id_sin,
                         "id_poliza": id_pol,
@@ -965,8 +1487,6 @@ def render_new_claim_form():
                         "dias_entre_ocurrencia_reporte": dias_entre,
                         "historial_siniestros_asegurado": total_historial,
                         "etiqueta_fraude_simulada": 0,
-                        
-                        # Campos de compatibilidad preexistentes
                         "cliente": nombre_asegurado,
                         "tipo_siniestro": cobertura,
                         "fecha_incidente": str(fecha_ocurrencia),
@@ -978,50 +1498,46 @@ def render_new_claim_form():
                         "narrativa": descripcion,
                         "score_riesgo": 0,
                         "nivel_riesgo": "Bajo",
-                        "alertas": []
+                        "alertas": [],
                     }
 
-                    # Ejecutar análisis del motor de reglas y del modelo ML
                     try:
                         from src.rules.fraud_rules import evaluar_todas_las_reglas
                         from src.models.fraud_model import calcular_score_ml
-                        
+
                         contexto_reglas = {
-                            "conteo_proveedor": random.randint(1, 4), 
+                            "conteo_proveedor": random.randint(1, 4),
                             "ramo_poliza": poliza_obj.get("ramo")
                         }
                         res_reglas = evaluar_todas_las_reglas(nuevo, contexto_reglas)
-                        res_ml = calcular_score_ml(nuevo)
-                        
-                        score_final = int(res_reglas["score_reglas"] * 0.50 + res_ml["score_ml"] * 0.50)
-                        score_final = min(max(score_final, 5), 99)
+                        res_ml     = calcular_score_ml(nuevo)
+
+                        score_final  = int(res_reglas["score_reglas"] * 0.50 + res_ml["score_ml"] * 0.50)
+                        score_final  = min(max(score_final, 5), 99)
                         nivel_riesgo = "Alto" if score_final >= 70 else "Medio" if score_final >= 40 else "Bajo"
-                        
-                        nuevo["score_riesgo"] = score_final
-                        nuevo["nivel_riesgo"] = nivel_riesgo
-                        nuevo["alertas"] = res_reglas["alertas"]
-                        nuevo["score_reglas"] = res_reglas["score_reglas"]
-                        nuevo["score_ml"] = res_ml["score_ml"]
-                        nuevo["score_nlp"] = 0
+
+                        nuevo["score_riesgo"]  = score_final
+                        nuevo["nivel_riesgo"]  = nivel_riesgo
+                        nuevo["alertas"]       = res_reglas["alertas"]
+                        nuevo["score_reglas"]  = res_reglas["score_reglas"]
+                        nuevo["score_ml"]      = res_ml["score_ml"]
+                        nuevo["score_nlp"]     = 0
                         nuevo["similitud_max"] = 0.0
-                        nuevo["es_anomalia"] = score_final >= 60
-                        nuevo["explicacion_ia"] = f"Análisis completado. Riesgo {nivel_riesgo} debido a los indicadores: {', '.join(res_reglas['alertas']) if res_reglas['alertas'] else 'Ninguno destacado'}."
+                        nuevo["es_anomalia"]   = score_final >= 60
+                        nuevo["explicacion_ia"] = generar_explicacion_alerta(nuevo)
                     except Exception as scoring_err:
-                        st.warning(f"Error ejecutando pipeline de análisis de IA: {scoring_err}")
+                        st.warning(f"Error en pipeline AIS: {scoring_err}")
                         nuevo["score_riesgo"] = 10
                         nuevo["nivel_riesgo"] = "Bajo"
-                        nuevo["alertas"] = []
+                        nuevo["alertas"]      = []
 
-                    # 5. Insertar Siniestro en Supabase
                     alertas_raw = nuevo["alertas"]
                     nuevo["alertas"] = json.dumps(nuevo["alertas"])
-                    
                     res_ins_sin = supabase.table("siniestros").insert(nuevo).execute()
                     if not res_ins_sin.data:
-                        st.error("Error insertando el siniestro en la base de datos de Supabase.")
+                        st.error("Error insertando el siniestro en Supabase.")
                         return
 
-                    # 6. Insertar Documento asociado en Supabase
                     nuevo_doc = {
                         "id_siniestro": id_sin,
                         "tipo_documento": tipo_doc,
@@ -1033,58 +1549,55 @@ def render_new_claim_form():
                     }
                     supabase.table("documentos").insert(nuevo_doc).execute()
 
-                    # Rellenar lista de estado de la aplicación
                     nuevo["alertas"] = alertas_raw
                     st.session_state["siniestros"].insert(0, nuevo)
                     st.session_state["show_form"] = False
 
-                    # Mostrar avisos visuales
                     if nuevo["nivel_riesgo"] == "Alto":
-                        st.error(f"⚠️ Siniestro registrado en Supabase · Riesgo **ALTO** (score {nuevo['score_riesgo']}).")
+                        st.error(f"⚠️ Siniestro registrado · Riesgo **ALTO** (score {nuevo['score_riesgo']}). {nuevo.get('explicacion_ia','')}")
                     elif nuevo["nivel_riesgo"] == "Medio":
-                        st.warning(f"🟡 Siniestro registrado en Supabase · Riesgo **MEDIO** (score {nuevo['score_riesgo']}).")
+                        st.warning(f"🟡 Siniestro registrado · Riesgo **MEDIO** (score {nuevo['score_riesgo']}).")
                     else:
-                        st.success(f"✅ Siniestro registrado en Supabase · Riesgo **BAJO** (score {nuevo['score_riesgo']}).")
-
+                        st.success(f"✅ Siniestro registrado · Riesgo **BAJO** (score {nuevo['score_riesgo']}).")
                     st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════
-# DETAIL VIEW
+# DETAIL VIEW — con explicación automática y NLP
 # ═══════════════════════════════════════════════════════════════
-def render_detail(s: dict):
+def render_detail(s: dict, todos: list):
     st.markdown(f"""
-    <div style="background:rgba(13,18,32,0.9);border:1px solid rgba(30,58,95,0.5);
-    border-radius:10px;padding:20px 24px;margin-bottom:16px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div style="background:#0B1120;border:1px solid rgba(99,102,241,0.18);
+    border-radius:12px;padding:22px 26px;margin-bottom:18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
         <div>
-            <div style="font-family:'Space Mono',monospace;font-size:11px;color:#3B82F6;">{s.get('id_siniestro')}</div>
-            <div style="font-family:Syne,sans-serif;font-weight:700;font-size:18px;color:#fff;">{s.get('cliente')}</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:#818CF8;margin-bottom:4px;">{s.get('id_siniestro')}</div>
+            <div style="font-family:Syne,sans-serif;font-weight:700;font-size:20px;color:#fff;">{s.get('cliente', s.get('id_asegurado',''))}</div>
         </div>
         <div>{risk_pill_html(s.get('nivel_riesgo','Bajo'))}</div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;font-size:12px;">
-        <div><span style="color:#64748B;">Tipo:</span> <span style="color:#C8D4E8;">{s.get('tipo_siniestro')}</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;font-size:13px;">
+        <div><span style="color:#64748B;">Ramo:</span> <span style="color:#CBD5E1;">{s.get('ramo', s.get('tipo_siniestro',''))}</span></div>
         <div><span style="color:#64748B;">Monto:</span> <span style="color:#E2E8F0;font-weight:600;">${s.get('monto_reclamado',0):,.0f}</span></div>
-        <div><span style="color:#64748B;">Ciudad:</span> <span style="color:#C8D4E8;">{s.get('ciudad')}</span></div>
-        <div><span style="color:#64748B;">Incidente:</span> <span style="color:#C8D4E8;">{s.get('fecha_incidente')}</span></div>
-        <div><span style="color:#64748B;">Póliza:</span> <span style="color:#C8D4E8;">{s.get('fecha_poliza')}</span></div>
-        <div><span style="color:#64748B;">Historial:</span> <span style="color:#C8D4E8;">{s.get('historial_reclamos')} reclamos</span></div>
+        <div><span style="color:#64748B;">Ciudad:</span> <span style="color:#CBD5E1;">{s.get('ciudad','')}</span></div>
+        <div><span style="color:#64748B;">Incidente:</span> <span style="color:#CBD5E1;">{s.get('fecha_ocurrencia', s.get('fecha_incidente',''))}</span></div>
+        <div><span style="color:#64748B;">Póliza:</span> <span style="color:#CBD5E1;">{s.get('id_poliza', s.get('fecha_poliza',''))}</span></div>
+        <div><span style="color:#64748B;">Historial:</span> <span style="color:#CBD5E1;">{s.get('historial_reclamos', s.get('historial_siniestros_asegurado',0))} siniestros</span></div>
     </div>
-    <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(30,58,95,0.4);">
-        <div style="font-size:10px;color:#64748B;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em;">Narrativa</div>
-        <div style="font-size:12px;color:#94A3B8;line-height:1.6;">{s.get('narrativa','—')}</div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(99,102,241,0.12);">
+        <div style="font-size:10px;color:#64748B;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.08em;">Narrativa</div>
+        <div style="font-size:13px;color:#94A3B8;line-height:1.7;">{s.get('narrativa', s.get('descripcion', '—'))}</div>
     </div>
     </div>""", unsafe_allow_html=True)
 
     alertas = s.get("alertas", [])
     if alertas:
-        st.markdown('<div class="section-title">Indicadores de riesgo detectados</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ais-section-title">Indicadores de riesgo detectados</div>', unsafe_allow_html=True)
         for a in alertas:
             st.markdown(f'<div class="alert-item"><div class="alert-desc">⚡ {a}</div></div>', unsafe_allow_html=True)
 
-    # IA explanation
-    st.markdown('<div class="section-title" style="margin-top:16px;">Explicación IA</div>', unsafe_allow_html=True)
+    # Explicación automática (INDISPENSABLE)
+    st.markdown('<div class="ais-section-title" style="margin-top:18px;">Explicación automática de la alerta</div>', unsafe_allow_html=True)
     try:
         from src.explainability.explain_score import explicar_siniestro
         features = {
@@ -1093,15 +1606,21 @@ def render_detail(s: dict):
             "alertas": alertas,
             "nlp": {"max_similitud": 0},
         }
-        explicacion = explicar_siniestro(s, features)
-    except Exception as e:
-        explicacion = f"Módulo de explicación no disponible: {str(e)[:60]}"
+        explicacion_modulo = explicar_siniestro(s, features)
+    except Exception:
+        explicacion_modulo = None
 
+    # Siempre mostramos la explicación automática generada
+    explicacion_auto = generar_explicacion_alerta(s)
     st.markdown(f"""
     <div class="explain-card">
-        <h5>Análisis automatizado</h5>
-        <p>{explicacion.replace(chr(10), '<br>')}</p>
+        <h5>🤖 Análisis automático AIS</h5>
+        <p>{explicacion_auto}</p>
+        {f'<p style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(99,102,241,0.15);font-size:12px;color:#64748B;">{explicacion_modulo}</p>' if explicacion_modulo else ''}
     </div>""", unsafe_allow_html=True)
+
+    # Análisis NLP
+    render_analisis_nlp(s, todos)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1111,28 +1630,29 @@ def page_dashboard():
     render_topbar()
     data = st.session_state["siniestros"]
 
-    # ── LEFT content, RIGHT panel ──
     left_col, right_col = st.columns([3.2, 1])
 
     with left_col:
-        # KPIs
+        # KPIs rediseñadas
         render_kpis(data)
 
+        st.markdown('<div class="ais-separator"></div>', unsafe_allow_html=True)
+
         # Controls row
-        c_btn, c_filter, c_search = st.columns([1.5, 1.5, 2])
+        c_btn, c_filter, c_search, c_export = st.columns([1.5, 1.2, 2, 1.8])
         with c_btn:
-            if st.button("＋ Nuevo registro", key="open_form_btn", use_container_width=True, type="primary"):
+            if st.button("＋ Nuevo siniestro", key="open_form_btn", use_container_width=True, type="primary"):
                 st.session_state["show_form"] = not st.session_state.get("show_form", False)
-
         with c_filter:
-            filtro = st.selectbox("Filtrar por riesgo", ["Todos", "Alto", "Medio", "Bajo"],
+            filtro = st.selectbox("Filtrar", ["Todos", "Alto", "Medio", "Bajo"],
                                   key="risk_filter", label_visibility="collapsed")
-
         with c_search:
-            busqueda = st.text_input("", placeholder="🔍 Buscar por cliente, ID, ciudad…",
+            busqueda = st.text_input("", placeholder="🔍 Buscar por asegurado, ID, ciudad…",
                                      label_visibility="collapsed")
+        with c_export:
+            render_export_button(data)
 
-        st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
 
         # Form inline
         if st.session_state.get("show_form", False):
@@ -1148,13 +1668,21 @@ def page_dashboard():
                         q in s.get("cliente", "").lower() or
                         q in s.get("id_siniestro", "").lower() or
                         q in s.get("ciudad", "").lower() or
-                        q in s.get("tipo_siniestro", "").lower()]
+                        q in s.get("tipo_siniestro", "").lower() or
+                        q in s.get("ramo", "").lower()]
 
-        # Tabs
-        tab_table, tab_charts, tab_detail = st.tabs(["📋 Tabla de siniestros", "📊 Análisis visual", "🔍 Detalle"])
+        # Tabs principales
+        tab_table, tab_charts, tab_detail, tab_red, tab_ranking, tab_ahorro = st.tabs([
+            "📋 Siniestros",
+            "📊 Análisis Visual",
+            "🔍 Detalle & NLP",
+            "🕸️ Red de Relaciones",
+            "🏆 Ranking Proveedores",
+            "💡 Simulación Ahorro",
+        ])
 
         with tab_table:
-            st.markdown(f'<p style="font-size:11px;color:#475569;margin-bottom:12px;">{len(filtered)} registros mostrados</p>', unsafe_allow_html=True)
+            st.markdown(f'<p style="font-size:11px;color:#475569;margin-bottom:14px;">{len(filtered)} registros mostrados</p>', unsafe_allow_html=True)
             render_table(filtered)
 
         with tab_charts:
@@ -1162,12 +1690,21 @@ def page_dashboard():
 
         with tab_detail:
             if filtered:
-                opciones = {f"{s['id_siniestro']} — {s['cliente']}": s for s in filtered}
+                opciones = {f"{s.get('id_siniestro','?')} — {s.get('cliente', s.get('id_asegurado',''))}": s for s in filtered}
                 sel = st.selectbox("Seleccionar siniestro", list(opciones.keys()), label_visibility="collapsed")
                 if sel:
-                    render_detail(opciones[sel])
+                    render_detail(opciones[sel], data)
             else:
-                st.markdown('<p style="color:#475569;font-size:13px;">Sin registros para mostrar.</p>', unsafe_allow_html=True)
+                st.markdown('<p style="color:#475569;font-size:13px;padding:20px 0;">Sin registros para mostrar.</p>', unsafe_allow_html=True)
+
+        with tab_red:
+            render_red_relaciones(data)
+
+        with tab_ranking:
+            render_ranking_proveedores(data)
+
+        with tab_ahorro:
+            render_simulacion_ahorro(data)
 
     with right_col:
         tab_alerts, tab_chat = st.tabs(["🔴 Alertas", "🤖 IA Chat"])
