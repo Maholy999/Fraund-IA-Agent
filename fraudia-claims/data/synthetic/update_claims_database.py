@@ -138,6 +138,17 @@ def main():
         if id_sin in inconsistencias_docs:
             s["inconsistencia_detectada"] = True
 
+        # --- Calcular historial REAL del asegurado en la base de datos ---
+        id_aseg = s.get("id_asegurado")
+        if id_aseg:
+            historial_real = sum(1 for x in siniestros if x.get("id_asegurado") == id_aseg)
+        else:
+            historial_real = 1
+        
+        s["historial_reclamos"] = historial_real
+        s["historial_siniestros_asegurado"] = historial_real
+        # -----------------------------------------------------------------
+
         # Crear contexto de reglas
         ramo_pol = polizas_map.get(id_pol, "")
         
@@ -165,7 +176,8 @@ def main():
             "narrativas_previas": [n for n in todas_narrativas if n != s.get("narrativa", s.get("descripcion", ""))],
             "siniestros_vehiculo": siniestros_vehiculo,
             "siniestros_rc": siniestros_rc,
-            "hora_siniestro": 3 if "madrugada" in str(s.get("narrativa", "")).lower() else -1
+            "hora_siniestro": 3 if "madrugada" in str(s.get("narrativa", "")).lower() else -1,
+            "siniestros_asegurado": s["historial_reclamos"]
         }
 
         # Evaluar nuevas reglas y señales de fraude
@@ -199,7 +211,9 @@ def main():
             "score_reglas": s["score_reglas"],
             "score_ml": s["score_ml"],
             "es_anomalia": s["es_anomalia"],
-            "explicacion_ia": s["explicacion_ia"]
+            "explicacion_ia": s["explicacion_ia"],
+            "historial_reclamos": s["historial_reclamos"],
+            "historial_siniestros_asegurado": s["historial_siniestros_asegurado"]
         }
 
         res_upd = supabase.table("siniestros").update(update_data).eq("id_siniestro", id_sin).execute()

@@ -47,7 +47,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     else:
         dias_entre = int(dias_entre)
 
-    historial_aseg = int(siniestro.get("historial_siniestros_asegurado", siniestro.get("historial_reclamos", 0)))
+    historial_aseg = int(contexto.get("siniestros_asegurado", siniestro.get("historial_siniestros_asegurado", siniestro.get("historial_reclamos", 0))))
     documentos_completos = siniestro.get("documentos_completos")
     if documentos_completos is None:
         documentos_completos = True

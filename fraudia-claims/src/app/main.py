@@ -1287,7 +1287,6 @@ def render_table(data: list):
           <td>{pill}</td>
           <td>{bar}</td>
           <td>{alert_badge}</td>
-          <td style="color:#475569;font-size:11px;">{s.get('ciudad','')}</td>
         </tr>"""
 
     st.markdown(f"""
@@ -1297,7 +1296,7 @@ def render_table(data: list):
         <tr>
           <th>ID Siniestro</th><th>Asegurado</th><th>Ramo</th>
           <th>Monto</th><th>Riesgo</th><th>Score</th>
-          <th>Alertas</th><th>Ciudad</th>
+          <th>Alertas</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -1324,7 +1323,6 @@ def render_export_button(data: list):
             "Score Riesgo": s.get("score_riesgo", 0),
             "Nivel Riesgo": s.get("nivel_riesgo", ""),
             "Alertas": "; ".join([a.get("descripcion") if isinstance(a, dict) else str(a) for a in (json.loads(s.get("alertas", "[]")) if isinstance(s.get("alertas"), str) else s.get("alertas", []))]),
-            "Ciudad": s.get("ciudad", ""),
             "Sucursal": s.get("sucursal", ""),
             "Fecha Ocurrencia": s.get("fecha_ocurrencia", s.get("fecha_incidente", "")),
             "Fecha Reporte": s.get("fecha_reporte", ""),
@@ -1703,7 +1701,6 @@ def render_detail(s: dict, todos: list):
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;font-size:13px;">
         <div><span style="color:#64748B;">Ramo:</span> <span style="color:#CBD5E1;">{s.get('ramo', s.get('tipo_siniestro',''))}</span></div>
         <div><span style="color:#64748B;">Monto:</span> <span style="color:#E2E8F0;font-weight:600;">${s.get('monto_reclamado',0):,.0f}</span></div>
-        <div><span style="color:#64748B;">Ciudad:</span> <span style="color:#CBD5E1;">{s.get('ciudad','')}</span></div>
         <div><span style="color:#64748B;">Incidente:</span> <span style="color:#CBD5E1;">{s.get('fecha_ocurrencia', s.get('fecha_incidente',''))}</span></div>
         <div><span style="color:#64748B;">Póliza:</span> <span style="color:#CBD5E1;">{s.get('id_poliza', s.get('fecha_poliza',''))}</span></div>
         <div><span style="color:#64748B;">Historial:</span> <span style="color:#CBD5E1;">{s.get('historial_reclamos', s.get('historial_siniestros_asegurado',0))} siniestros</span></div>
@@ -1787,7 +1784,7 @@ def page_dashboard():
             filtro = st.selectbox("Filtrar", ["Todos", "Alto", "Medio", "Bajo"],
                                   key="risk_filter", label_visibility="collapsed")
         with c_search:
-            busqueda = st.text_input("", placeholder="🔍 Buscar por asegurado, ID, ciudad…",
+            busqueda = st.text_input("", placeholder="🔍 Buscar por asegurado, ID…",
                                      label_visibility="collapsed")
 
         st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
@@ -1805,7 +1802,6 @@ def page_dashboard():
             filtered = [s for s in filtered if
                         q in s.get("cliente", "").lower() or
                         q in s.get("id_siniestro", "").lower() or
-                        q in s.get("ciudad", "").lower() or
                         q in s.get("tipo_siniestro", "").lower() or
                         q in s.get("ramo", "").lower()]
 
