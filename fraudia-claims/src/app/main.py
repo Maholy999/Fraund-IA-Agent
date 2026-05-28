@@ -1478,15 +1478,37 @@ def render_new_claim_form():
     </div>
     </div>""", unsafe_allow_html=True)
 
-    with st.form("form_siniestro", clear_on_submit=True):
+    # Usamos container regular en lugar de st.form para permitir refresco en tiempo real
+    with st.container(border=True):
         st.markdown('<p style="color:#818CF8;font-weight:600;font-size:13px;margin-bottom:12px;">1. Información del Siniestro</p>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            id_sin  = st.text_input("ID Siniestro", placeholder="SIN-2024-0021")
+            # Auto-generar ID Siniestro
+            nuevo_id_sin = "SIN-2024-0001"
+            if supabase:
+                try:
+                    res_ultimo_sin = supabase.table("siniestros").select("id_siniestro").order("id_siniestro", desc=True).limit(1).execute()
+                    if res_ultimo_sin.data and res_ultimo_sin.data[0].get("id_siniestro"):
+                        ultimo_id = res_ultimo_sin.data[0]["id_siniestro"]
+                        partes = ultimo_id.split("-")
+                        if len(partes) == 3 and partes[2].isdigit():
+                            num = int(partes[2]) + 1
+                            nuevo_id_sin = f"SIN-{partes[1]}-{num:04d}"
+                except Exception:
+                    pass
+            
+            id_sin  = st.text_input("ID Siniestro", value=nuevo_id_sin, disabled=True)
             id_aseg = st.text_input("ID Asegurado (Debe existir previamente)", placeholder="ASEG-2024-0001")
-            id_pol  = st.text_input("ID Póliza (Debe pertenecer al asegurado)", placeholder="POL-2024-0001")
-            ramo    = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
+            
+            ramo = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
             cobertura = st.selectbox("Cobertura / Tipo", ["Choque", "Robo", "Atención médica", "Incendio", "Daño", "Otro"])
+            
+            if ramo == "Vehículos":
+                placa_vehiculo = st.text_input("Placa del Vehículo", placeholder="ABC-1234").upper()
+            else:
+                placa_vehiculo = "N/A"
+
+
             monto   = st.number_input("Monto reclamado ($ USD)", min_value=0.0, step=100.0)
             monto_est = st.number_input("Monto estimado ($ USD)", min_value=0.0, step=100.0)
         with c2:
@@ -1511,7 +1533,12 @@ def render_new_claim_form():
 
         c3, c4 = st.columns(2)
         with c3:
-            tipo_doc  = st.selectbox("Tipo de Documento", ["Factura de Reparación", "Cédula del Asegurado", "Informe de Tránsito", "Historia Clínica", "Prescripción Médica", "Otro"])
+            tipos_doc_opciones = [
+                "Factura de reparación", "Denuncia policial", "Parte policial", 
+                "Peritaje", "Fotografías", "Informe técnico", "Fotografías de daño", 
+                "Historia clínica", "Exámenes", "Factura hospitalaria", "Orden médica", "Otros"
+            ]
+            tipo_doc  = st.multiselect("Tipo de Documento", tipos_doc_opciones, default=[])
             entregado = st.selectbox("¿Entregado?", ["Sí", "No"])
             legible   = st.selectbox("¿Legible?", ["Sí", "No"])
         with c4:
@@ -1521,17 +1548,21 @@ def render_new_claim_form():
 
         col_s, col_c = st.columns([2, 1])
         with col_s:
-            submitted = st.form_submit_button("🔍 Registrar, Analizar y Guardar", use_container_width=True, type="primary")
+            submitted = st.button("🔍 Registrar, Analizar y Guardar", use_container_width=True, type="primary")
         with col_c:
-            cancelar  = st.form_submit_button("Cancelar", use_container_width=True)
+            cancelar  = st.button("Cancelar", use_container_width=True)
 
         if cancelar:
             st.session_state["show_form"] = False
             st.rerun()
 
         if submitted:
-            if not id_sin or not id_aseg or not id_pol or not descripcion:
-                st.error("ID Siniestro, ID Asegurado, ID Póliza y Descripción son obligatorios.")
+            if not id_aseg or not descripcion:
+                st.error("ID Asegurado y Descripción son obligatorios.")
+            elif not tipo_doc:
+                st.error("Debe adjuntar al menos un Tipo de Documento.")
+            elif ramo == "Vehículos" and not placa_vehiculo:
+                st.error("El campo Placa del Vehículo es obligatorio para el ramo Vehículos.")
             elif not supabase:
                 st.error("Error: Supabase no está configurado. Configura el archivo .env para continuar.")
             else:
@@ -1546,15 +1577,14 @@ def render_new_claim_form():
                     ciudad_asegurado = asegurado_obj.get("ciudad", "Ecuador")
                     reclamos_previos = asegurado_obj.get("reclamos_ultimos_12_meses", 0)
 
-                    res_pol = supabase.table("polizas").select("*").eq("id_poliza", id_pol).execute()
+                    res_pol = supabase.table("polizas").select("*").eq("id_asegurado", id_aseg).execute()
                     if not res_pol.data:
-                        st.error(f"❌ El ID de Póliza '{id_pol}' no existe en la base de datos.")
+                        st.error(f"❌ El asegurado '{id_aseg}' no tiene ninguna póliza registrada.")
                         return
-
-                    poliza_obj = res_pol.data[0]
-                    if poliza_obj.get("id_asegurado") != id_aseg:
-                        st.error(f"❌ La póliza '{id_pol}' no pertenece al asegurado '{id_aseg}'.")
-                        return
+                    
+                    polizas_activas = [p for p in res_pol.data if p.get("estado", "").lower() == "activa"]
+                    poliza_obj = polizas_activas[0] if polizas_activas else res_pol.data[0]
+                    id_pol = poliza_obj.get("id_poliza")
 
                     fp_inicio = datetime.strptime(poliza_obj.get("fecha_inicio"), "%Y-%m-%d").date()
                     fp_fin    = datetime.strptime(poliza_obj.get("fecha_fin"),   "%Y-%m-%d").date()
@@ -1578,6 +1608,7 @@ def render_new_claim_form():
                         "id_asegurado": id_aseg,
                         "ramo": ramo,
                         "cobertura": cobertura,
+                        "placa_vehiculo": placa_vehiculo,
                         "fecha_ocurrencia": str(fecha_ocurrencia),
                         "fecha_reporte": str(fecha_reporte),
                         "monto_reclamado": float(monto),
@@ -1620,6 +1651,7 @@ def render_new_claim_form():
                         contexto_reglas = {
                             "conteo_proveedor": conteo_prov,
                             "ramo_poliza": poliza_obj.get("ramo"),
+                            "placa_vehiculo_asegurado": poliza_obj.get("placa_vehiculo_asegurado", "N/A"),
                             "narrativas_previas": [x.get("narrativa", x.get("descripcion", "")) for x in st.session_state.get("siniestros", [])],
                             "siniestros_vehiculo": random.choice([0, 0, 2, 3]) if "reincidente" in descripcion.lower() or "historial" in descripcion.lower() else 0,
                             "siniestros_rc": 3 if "responsabilidad civil" in cobertura.lower() or "rc" in cobertura.lower() else 0,
@@ -1661,16 +1693,17 @@ def render_new_claim_form():
                         st.error("Error insertando el siniestro en Supabase.")
                         return
 
-                    nuevo_doc = {
-                        "id_siniestro": id_sin,
-                        "tipo_documento": tipo_doc,
-                        "entregado": entregado == "Sí",
-                        "legible": legible == "Sí",
-                        "fecha_emision": str(fecha_emision_doc),
-                        "inconsistencia_detectada": inconsistencia_doc == "Sí",
-                        "observacion": observacion_doc or "Registrado manualmente."
-                    }
-                    supabase.table("documentos").insert(nuevo_doc).execute()
+                    for t_doc in tipo_doc:
+                        nuevo_doc = {
+                            "id_siniestro": id_sin,
+                            "tipo_documento": t_doc,
+                            "entregado": entregado == "Sí",
+                            "legible": legible == "Sí",
+                            "fecha_emision": str(fecha_emision_doc),
+                            "inconsistencia_detectada": inconsistencia_doc == "Sí",
+                            "observacion": observacion_doc or "Registrado manualmente."
+                        }
+                        supabase.table("documentos").insert(nuevo_doc).execute()
 
                     nuevo["alertas"] = alertas_raw
                     st.session_state["siniestros"].insert(0, nuevo)

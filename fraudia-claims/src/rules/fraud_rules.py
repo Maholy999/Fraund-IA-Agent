@@ -446,6 +446,32 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
         })
     detalle_reglas.append({"regla": "Signal_ReporteExtemporaneo", "activada": pts_s10 > 0, "descripcion": desc_s10 or "Reporte inmediato", "severidad": "amarilla", "puntos": pts_s10})
 
+    # Regla: Inconsistencia de Placa (Placa de Siniestro vs Póliza)
+    placa_vehiculo = str(siniestro.get("placa_vehiculo", "")).strip().upper()
+    placa_poliza = str(contexto.get("placa_vehiculo_asegurado", "")).strip().upper()
+    
+    es_placa_inconsistente = False
+    if ramo in ["vehículos", "vehiculos"]:
+        if placa_vehiculo and placa_poliza and placa_poliza != "N/A" and placa_vehiculo != "N/A":
+            if placa_vehiculo != placa_poliza:
+                es_placa_inconsistente = True
+                
+    if es_placa_inconsistente:
+        desc_placa = f"Placa del siniestro ({placa_vehiculo}) no coincide con la placa registrada en la póliza ({placa_poliza})"
+        score_total += 30
+        alertas_activadas.append({
+            "descripcion": desc_placa,
+            "severidad": "roja",
+            "puntos": 0
+        })
+        detalle_reglas.append({
+            "regla": "PlacaInconsistente",
+            "activada": True,
+            "descripcion": desc_placa,
+            "severidad": "roja",
+            "puntos_adicionales": 30
+        })
+
 
     # Ramo inconsistente (Regla preexistente mantenida)
     ramo_poliza = str(contexto.get("ramo_poliza", "")).strip().lower()

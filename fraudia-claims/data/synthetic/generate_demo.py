@@ -71,11 +71,17 @@ def generar_siniestro(idx: int) -> Dict:
 
     alertas = generar_alertas(monto, historial, fecha_poliza, fecha_incidente, es_sospechoso)
 
+    tipo = random.choice(TIPOS)
+    es_vehicular = "vehículo" in tipo.lower() or "tránsito" in tipo.lower() or "granizo" in tipo.lower()
+    placa = f"{random.choice(['ABC', 'PBR', 'XTR', 'GSM'])}-{random.randint(1000, 9999)}" if es_vehicular else "N/A"
+    
     return {
         "id": idx + 1,
         "id_siniestro": f"SIN-2024-{str(idx + 1).zfill(4)}",
         "cliente": CLIENTES[idx % len(CLIENTES)],
-        "tipo_siniestro": random.choice(TIPOS),
+        "tipo_siniestro": tipo,
+        "ramo": "Vehículos" if es_vehicular else "Otros",
+        "placa_vehiculo": placa,
         "monto_reclamado": monto,
         "fecha_incidente": fecha_incidente.strftime("%Y-%m-%d"),
         "fecha_poliza": fecha_poliza.strftime("%Y-%m-%d"),
