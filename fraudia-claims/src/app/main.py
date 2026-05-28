@@ -691,48 +691,51 @@ def generar_explicacion_alerta(s: dict) -> str:
     ramo = s.get("ramo", s.get("tipo_siniestro", "desconocido"))
 
     partes = []
-    
-    desc_alertas = []
-    alertas_rojas = 0
-    alertas_amarillas = 0
-    
-    for a in alertas:
-        if isinstance(a, dict):
-            desc_alertas.append(a.get("descripcion", ""))
-            if a.get("severidad") == "roja":
-                alertas_rojas += 1
-            else:
-                alertas_amarillas += 1
-        else:
-            desc_alertas.append(str(a))
-            alertas_rojas += 1
 
     if nivel == "Alto":
-        partes.append(f"Este siniestro presenta un <b>score de riesgo elevado ({score}/100)</b>, lo que lo clasifica como <b>Alto riesgo</b>.")
+        partes.append(f"**Score {score}/100:** El análisis detecta una acumulación inusual de anomalías que superan significativamente los parámetros estándar del ramo {ramo}. Se identifican inconsistencias que sugieren la necesidad de una verificación de campo.")
     elif nivel == "Medio":
-        partes.append(f"Este siniestro tiene <b>indicadores de riesgo moderado (score {score}/100)</b>, requiriendo seguimiento.")
+        partes.append(f"**Score {score}/100:** El análisis detecta factores atípicos que se desvían de los patrones comunes. Se sugiere una validación documental detallada antes de continuar con la liquidación.")
     else:
-        partes.append(f"Este siniestro muestra <b>patrones normales (score {score}/100)</b> dentro del ramo {ramo}.")
+        partes.append(f"**Score {score}/100:** Los indicadores analizados y el comportamiento del asegurado se mantienen dentro de los parámetros esperados para el ramo {ramo}. No se identifican anomalías críticas.")
 
-    if alertas_rojas > 0:
-        partes.append(f"Se activaron <b>{alertas_rojas} alerta(s) roja(s) críticas</b> de negocio.")
-    if alertas_amarillas > 0:
-        partes.append(f"Se identificaron <b>{alertas_amarillas} señal(es) de fraude</b> con acumulación de puntos de riesgo.")
-
-    if desc_alertas:
-        partes.append(f"Factores clave: {'; '.join(desc_alertas[:2])}.")
+    desc_alertas = " ".join([str(a.get("descripcion", a)) if isinstance(a, dict) else str(a) for a in alertas]).lower()
+    
+    # Análisis contextual
+    if "reporte" in desc_alertas and ("días" in desc_alertas or "demorado" in desc_alertas or "extemporáneo" in desc_alertas):
+        if nivel == "Bajo":
+            partes.append(f"• **Demora en Notificación:** Aunque el reclamo se reportó con {dias_entre} días de demora, este lapso no representa un riesgo severo en el contexto actual y se considera explicable.")
+        else:
+            partes.append(f"• **Demora en Notificación:** El reclamo fue reportado {dias_entre} días después del evento. Esta demora limita la capacidad técnica de la aseguradora para inspeccionar el lugar de los hechos de manera oportuna.")
+        
+    if "falta" in desc_alertas and "documentación" in desc_alertas:
+        partes.append("• **Documentación Pendiente:** El expediente carece de documentos obligatorios. Su ausencia impide completar la validación pericial de las circunstancias declaradas.")
 
     if monto > 15000:
-        partes.append(f"El monto reclamado de <b>${monto:,.0f}</b> es significativamente alto para el ramo {ramo}.")
-    if historial and historial > 3:
-        partes.append(f"El asegurado registra <b>{historial} siniestros previos</b>, un volumen superior al promedio.")
-    if dias_entre and dias_entre > 15:
-        partes.append(f"El reporte se realizó <b>{dias_entre} días después del incidente</b>, un plazo inusualmente largo.")
+        if nivel == "Bajo":
+            partes.append(f"• **Monto:** El reclamo asciende a ${monto:,.0f}. Aunque es un monto considerable, guarda proporción con el tipo de evento y la suma asegurada.")
+        else:
+            partes.append(f"• **Exposición Financiera:** El monto reclamado (${monto:,.0f}) excede significativamente la media estadística, lo que representa una exposición material para la aseguradora.")
+        
+    if historial and historial >= 3:
+        if nivel == "Bajo":
+            partes.append(f"• **Historial Activo:** El asegurado registra {historial} siniestros previos. Si bien existe recurrencia, los tipos de reclamos y las resoluciones se alinean con la normalidad del ramo.")
+        else:
+            partes.append(f"• **Frecuencia Elevada:** El asegurado presenta {historial} siniestros previos, una frecuencia que se desvía del comportamiento típico de la cartera y requiere revisión cruzada de antecedentes.")
+        
+    if "falsificación" in desc_alertas or "adulteración" in desc_alertas or "dudosa" in desc_alertas:
+        partes.append("**Inconsistencia Documental Grave:** Existen fuertes indicios de adulteración o falsificación en los documentos presentados, lo cual constituye una señal crítica y directa de intento de fraude material.")
+        
+    if "dinámica imposible" in desc_alertas or "incoherente" in desc_alertas:
+        partes.append("**Narrativa Incoherente:** La descripción de los hechos entra en contradicción con las leyes de la física o la lógica del daño, lo que indica fuertemente que el relato ha sido fabricado o alterado.")
 
-    if not partes:
-        partes.append("No se detectaron indicadores de riesgo significativos en este caso.")
+    if len(alertas) >= 4:
+        partes.append(f"**Acumulación de Anomalías:** Aunque algunas señales pueden parecer menores por separado, la concurrencia de **{len(alertas)} factores de riesgo** forma un patrón altamente inusual que amerita investigación profunda.")
 
-    return " ".join(partes)
+    if len(partes) == 1:
+        partes.append("No se identificaron anomalías o factores de riesgo relevantes que requieran atención especial.")
+
+    return "<br><br>".join(partes)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1749,9 +1752,18 @@ def render_detail(s: dict, todos: list):
 
     # Siempre mostramos la explicación automática generada
     explicacion_auto = generar_explicacion_alerta(s)
+    
+    st.markdown("""
+    <div style="background-color:rgba(234, 179, 8, 0.1); border-left: 4px solid #EAB308; padding: 12px 16px; margin-top:18px; margin-bottom: 12px; border-radius: 4px;">
+        <p style="color:#FDE047; font-size:12px; margin:0; line-height:1.5;">
+            ⚖️ <b>Aviso Ético y Operativo:</b> Las alertas y el análisis generados por la IA representan únicamente indicadores preventivos de riesgo y deben ser validados por un analista humano. El sistema puede generar falsos positivos y sus hallazgos no constituyen una acusación ni determinación definitiva de fraude.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
     st.markdown(f"""
     <div class="explain-card">
-        <h5>🤖 Análisis automático AIS</h5>
+        <h5>🤖 Análisis AI de Factores</h5>
         <p>{explicacion_auto}</p>
         {f'<p style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(99,102,241,0.15);font-size:12px;color:#64748B;">{explicacion_modulo}</p>' if explicacion_modulo else ''}
     </div>""", unsafe_allow_html=True)
@@ -1804,6 +1816,8 @@ def page_dashboard():
                         q in s.get("id_siniestro", "").lower() or
                         q in s.get("tipo_siniestro", "").lower() or
                         q in s.get("ramo", "").lower()]
+        # Sort dynamically by risk score descending (Alto -> Medio -> Bajo)
+        filtered = sorted(filtered, key=lambda x: x.get("score_riesgo", 0), reverse=True)
 
         # Tabs principales
         tab_table, tab_charts, tab_detail, tab_red, tab_ranking, tab_ahorro = st.tabs([

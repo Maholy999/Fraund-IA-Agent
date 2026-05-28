@@ -64,11 +64,11 @@ def explicar_siniestro(
 {json.dumps(contexto, ensure_ascii=False, indent=2)}
 
 Proporciona:
-1. Resumen ejecutivo del nivel de riesgo (2-3 oraciones)
-2. Factores que elevan el riesgo (lista)
-3. Factores que reducen el riesgo (lista)
-4. Recomendación para el analista
-5. Próximos pasos sugeridos"""
+Proporciona:
+1. Conclusión General del Siniestro (Resumen ejecutivo y probabilidad de fraude)
+2. Impacto Potencial y Exposición Financiera
+3. Nivel de Prioridad y Sugerencia de Auditoría
+4. Factores clave que sustentan la decisión"""
 
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -142,23 +142,32 @@ def _explicacion_local(ctx: Dict) -> str:
     alertas = ctx.get("alertas_activadas", [])
 
     lineas = [
-        f"**Resumen ejecutivo:** El siniestro {ctx.get('id_siniestro')} presenta nivel de riesgo **{nivel}** "
-        f"con score de {score}/100.",
+        f"**1. Conclusión General del Siniestro:**",
+        f"Tras el análisis automatizado, este caso se clasifica con un nivel de riesgo **{nivel}** (Score: {score}/100). "
+        f"{'Existe una alta probabilidad de fraude o sobrecostos debido a la severidad y concurrencia de señales atípicas.' if nivel == 'Alto' else 'Se observan algunas anomalías que elevan la probabilidad de irregularidades y requieren verificación manual.' if nivel == 'Medio' else 'El comportamiento reportado es congruente con los patrones históricos y la probabilidad de fraude es mínima.'}",
         "",
-        "**Indicadores detectados:**",
+        f"**2. Impacto Potencial y Exposición Financiera:**",
+        f"El monto reclamado asciende a **${ctx.get('monto', 0):,.0f}**. "
+        f"{'Este valor representa una alta exposición financiera para la aseguradora dado el contexto del siniestro.' if (ctx.get('monto', 0) or 0) > 10000 and nivel != 'Bajo' else 'La exposición financiera se encuentra dentro de parámetros controlables.'}",
+        "",
+        f"**3. Nivel de Prioridad y Sugerencia de Auditoría:**",
+        f"• **Prioridad:** {'🚨 URGENTE' if nivel == 'Alto' else '🟡 MODERADA' if nivel == 'Medio' else '✅ NORMAL'}",
+        f"• **Recomendación:** {'Se sugiere paralizar el pago y derivar a la unidad de Investigaciones Especiales (SIU) para una auditoría de campo.' if nivel == 'Alto' else 'Solicitar documentos adicionales y validación cruzada antes de emitir cualquier pago.' if nivel == 'Medio' else 'Proceder con el flujo regular de liquidación y pago.'}",
+        "",
+        "**4. Factores clave que sustentan la decisión:**",
     ]
+    
     if alertas:
         for a in alertas:
-            lineas.append(f"• {a}")
+            if isinstance(a, dict):
+                lineas.append(f"• {a.get('descripcion', '')}")
+            else:
+                lineas.append(f"• {a}")
     else:
-        lineas.append("• No se identificaron alertas adicionales.")
+        lineas.append("• No se detectaron señales de fraude adicionales.")
 
-    lineas += [
-        "",
-        f"**Recomendación:** {'Se sugiere revisión prioritaria y solicitud de documentación adicional.' if nivel == 'Alto' else 'Continuar proceso estándar con seguimiento rutinario.' if nivel == 'Medio' else 'Caso dentro de parámetros normales. Proceder con trámite regular.'}",
-        "",
-        "⚠️ *Esta es una asistencia automatizada. La decisión final corresponde al analista.*",
-    ]
+    lineas.append("")
+    lineas.append("⚠️ *Este análisis es autogenerado por el modelo de IA. La decisión final corresponde al ajustador humano.*")
     return "\n".join(lineas)
 
 

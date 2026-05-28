@@ -179,7 +179,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     })
     if es_borde_extremo:
         alertas_activadas.append({
-            "descripcion": f"Siniestro Extremo al Borde de Vigencia de la Póliza (< 48 hrs)",
+            "descripcion": f"El siniestro ocurrió a menos de 48 horas del inicio o fin de vigencia de la póliza",
             "severidad": "amarilla",
             "puntos": 0
         })
@@ -196,7 +196,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     })
     if es_demora_robo:
         alertas_activadas.append({
-            "descripcion": f"Demora Atípica en Denuncia de Robo (> 4 días)",
+            "descripcion": f"El reclamo por robo fue notificado a la aseguradora {dias_entre} días después del incidente, superando el tiempo habitual",
             "severidad": "amarilla",
             "puntos": 0
         })
@@ -223,7 +223,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     })
     if es_clonada:
         alertas_activadas.append({
-            "descripcion": "Narrativa del Siniestro Idéntica o Clonada",
+            "descripcion": "La descripción del siniestro es idéntica a otro caso previamente registrado",
             "severidad": "amarilla",
             "puntos": 0
         })
@@ -259,10 +259,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     if "robo" in cobertura or "vehículo" in ramo or "vehiculo" in ramo:
         if dias_entre > 2:  # > 48 horas
             pts_s2 = 8
-            desc_s2 = f"Reporte realizado más de 48 horas después del evento de robo/vehículos (+8 pts)"
+            desc_s2 = f"El reclamo fue notificado a la aseguradora más de 48 horas después del evento (+8 pts)"
         elif dias_entre >= 1:  # entre 24 y 48 horas
             pts_s2 = 4
-            desc_s2 = f"Reporte realizado entre 24 y 48 horas después del evento de robo/vehículos (+4 pts)"
+            desc_s2 = f"El reclamo fue notificado a la aseguradora entre 24 y 48 horas después del evento (+4 pts)"
 
     if pts_s2 > 0:
         score_total += pts_s2
@@ -278,10 +278,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     desc_s3 = ""
     if historial_aseg >= 3:
         pts_s3 = 8
-        desc_s3 = f"Frecuencia crítica del asegurado: {historial_aseg} reclamos previos (+8 pts)"
+        desc_s3 = f"El asegurado registra {historial_aseg} siniestros previos, lo cual representa una frecuencia elevada para este tipo de póliza (+8 pts)"
     elif historial_aseg == 2:
         pts_s3 = 4
-        desc_s3 = f"Frecuencia moderada del asegurado: 2 reclamos previos (+4 pts)"
+        desc_s3 = f"El asegurado registra 2 siniestros previos en su historial (+4 pts)"
 
     if pts_s3 > 0:
         score_total += pts_s3
@@ -302,10 +302,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
 
     if siniestros_vehiculo >= 3:
         pts_s4 = 6
-        desc_s4 = f"Frecuencia crítica del vehículo (placa/chasis): {siniestros_vehiculo} reclamos (+6 pts)"
+        desc_s4 = f"El vehículo involucrado registra {siniestros_vehiculo} siniestros previos, lo que representa una frecuencia elevada para una sola unidad (+6 pts)"
     elif siniestros_vehiculo == 2:
         pts_s4 = 3
-        desc_s4 = f"Frecuencia moderada del vehículo (placa/chasis): 2 reclamos (+3 pts)"
+        desc_s4 = f"El vehículo involucrado registra 2 siniestros previos en su historial (+3 pts)"
 
     if pts_s4 > 0:
         score_total += pts_s4
@@ -325,10 +325,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
 
     if siniestros_rc > 2:
         pts_s5 = 6
-        desc_s5 = f"Concentración crítica en Responsabilidad Civil: {siniestros_rc} reclamos (+6 pts)"
+        desc_s5 = f"El asegurado presenta {siniestros_rc} reclamos afectando cobertura de Responsabilidad Civil, una concentración atípica (+6 pts)"
     elif siniestros_rc in [1, 2]:
         pts_s5 = 3
-        desc_s5 = f"Reclamo afecta cobertura de Responsabilidad Civil (+3 pts)"
+        desc_s5 = f"Este reclamo involucra cobertura de Responsabilidad Civil (+3 pts)"
 
     if pts_s5 > 0:
         score_total += pts_s5
@@ -345,7 +345,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     # Si falta cédula o informe policial
     if not documentos_completos or any(keyword in narrativa_lower for keyword in ["falta cédula", "falta cedula", "falta informe", "sin informe policial", "sin parte policial"]):
         pts_s6 = 4
-        desc_s6 = "Falta de documentación obligatoria soporte (cédula o informe policial) (+4 pts)"
+        desc_s6 = "El expediente carece de documentos obligatorios (cédula de identidad o informe policial) necesarios para la validación del hecho (+4 pts)"
 
     if pts_s6 > 0:
         score_total += pts_s6
@@ -368,10 +368,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
 
     if es_dinamica_imposible or "inconsistente" in narrativa_lower or "ilógico" in narrativa_lower or "ilogico" in narrativa_lower:
         pts_s7 = 6
-        desc_s7 = "Narrativa del siniestro presenta incoherencias o contradicciones lógicas (+6 pts)"
+        desc_s7 = "La descripción de los daños o la secuencia de eventos presenta contradicciones que requieren verificación pericial (+6 pts)"
     elif es_madrugada:
         pts_s7 = 3
-        desc_s7 = "Siniestro múltiple reportado en altas horas de la madrugada (1:00 AM - 5:00 AM) (+3 pts)"
+        desc_s7 = "El siniestro fue declarado en horario nocturno entre 1:00 AM y 5:00 AM, lo que dificulta la verificación de testigos (+3 pts)"
 
     if pts_s7 > 0:
         score_total += pts_s7
@@ -391,7 +391,7 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     
     if (choque_objeto_fijo or sin_terceros) and (monto > 5000 or "severo" in narrativa_lower or "grave" in narrativa_lower):
         pts_s8 = 5
-        desc_s8 = "Daños graves reportados sin terceros identificados o choque contra objeto fijo (+5 pts)"
+        desc_s8 = "El siniestro reporta daños graves sin que haya testigos ni terceros identificados que corroboren los hechos (+5 pts)"
 
     if pts_s8 > 0:
         score_total += pts_s8
@@ -413,10 +413,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
 
     if es_falsificacion or "tachadura" in narrativa_lower or "firma dudosa" in narrativa_lower:
         pts_s9 = 10
-        desc_s9 = "Se detectan alteraciones físicas, tachaduras o firmas dudosas en documentos (+10 pts)"
+        desc_s9 = "Se detectaron características físicas irregulares en la documentación que requieren autenticación pericial (+10 pts)"
     elif fecha_emision_anterior:
         pts_s9 = 10
-        desc_s9 = "Fecha de emisión de documentos es anterior a la fecha de ocurrencia del siniestro (+10 pts)"
+        desc_s9 = "La fecha de emisión de un documento es anterior a la fecha del siniestro declarado, lo que genera una inconsistencia temporal (+10 pts)"
 
     if pts_s9 > 0:
         score_total += pts_s9
@@ -432,10 +432,10 @@ def evaluar_todas_las_reglas(siniestro: Dict[str, Any], contexto: Dict[str, Any]
     desc_s10 = ""
     if dias_entre > 7:
         pts_s10 = 5
-        desc_s10 = f"Reporte extemporáneo fuera de plazos contractuales ({dias_entre} días, >7 días) (+5 pts)"
+        desc_s10 = f"El siniestro fue notificado a la aseguradora {dias_entre} días después del evento, superando el plazo contractual máximo (+5 pts)"
     elif 4 <= dias_entre <= 7:
         pts_s10 = 3
-        desc_s10 = f"Reporte demorado ({dias_entre} días, entre 4 y 7 días) (+3 pts)"
+        desc_s10 = f"El reclamo fue notificado {dias_entre} días después del incidente, dentro de un rango que requiere atención (+3 pts)"
 
     if pts_s10 > 0:
         score_total += pts_s10
