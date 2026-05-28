@@ -1478,8 +1478,8 @@ def render_new_claim_form():
     </div>
     </div>""", unsafe_allow_html=True)
 
-    # Usamos container regular en lugar de st.form para permitir refresco en tiempo real
-    with st.container(border=True):
+    # Restauramos st.form para evitar que la interfaz se bloquee/recargue en cada interacción
+    with st.form("nuevo_siniestro_form", clear_on_submit=True, border=True):
         st.markdown('<p style="color:#818CF8;font-weight:600;font-size:13px;margin-bottom:12px;">1. Información del Siniestro</p>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
@@ -1487,13 +1487,19 @@ def render_new_claim_form():
             nuevo_id_sin = "SIN-2024-0001"
             if supabase:
                 try:
-                    res_ultimo_sin = supabase.table("siniestros").select("id_siniestro").order("id_siniestro", desc=True).limit(1).execute()
-                    if res_ultimo_sin.data and res_ultimo_sin.data[0].get("id_siniestro"):
-                        ultimo_id = res_ultimo_sin.data[0]["id_siniestro"]
-                        partes = ultimo_id.split("-")
-                        if len(partes) == 3 and partes[2].isdigit():
-                            num = int(partes[2]) + 1
-                            nuevo_id_sin = f"SIN-{partes[1]}-{num:04d}"
+                    res_ultimo_sin = supabase.table("siniestros").select("id_siniestro").execute()
+                    if res_ultimo_sin.data:
+                        max_num = 0
+                        year_str = "2024"
+                        for row in res_ultimo_sin.data:
+                            id_val = row.get("id_siniestro", "")
+                            partes = id_val.split("-")
+                            if len(partes) >= 3 and partes[2].isdigit():
+                                num = int(partes[2])
+                                if num > max_num:
+                                    max_num = num
+                                    year_str = partes[1]
+                        nuevo_id_sin = f"SIN-{year_str}-{(max_num + 1):04d}"
                 except Exception:
                     pass
             
@@ -1503,11 +1509,7 @@ def render_new_claim_form():
             ramo = st.selectbox("Ramo del siniestro", ["Vehículos", "Salud", "Vida", "Hogar", "Generales", "Otro"])
             cobertura = st.selectbox("Cobertura / Tipo", ["Choque", "Robo", "Atención médica", "Incendio", "Daño", "Otro"])
             
-            if ramo == "Vehículos":
-                placa_vehiculo = st.text_input("Placa del Vehículo", placeholder="ABC-1234").upper()
-            else:
-                placa_vehiculo = "N/A"
-
+            placa_vehiculo = st.text_input("Placa del Vehículo", placeholder="ABC-1234 (Dejar vacío si no aplica)").upper()
 
             monto   = st.number_input("Monto reclamado ($ USD)", min_value=0.0, step=100.0)
             monto_est = st.number_input("Monto estimado ($ USD)", min_value=0.0, step=100.0)
@@ -1548,21 +1550,23 @@ def render_new_claim_form():
 
         col_s, col_c = st.columns([2, 1])
         with col_s:
-            submitted = st.button("🔍 Registrar, Analizar y Guardar", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("🔍 Registrar, Analizar y Guardar", use_container_width=True, type="primary")
         with col_c:
-            cancelar  = st.button("Cancelar", use_container_width=True)
+            cancelar  = st.form_submit_button("Cancelar", use_container_width=True)
 
         if cancelar:
             st.session_state["show_form"] = False
             st.rerun()
 
         if submitted:
+            placa_vehiculo = placa_vehiculo.strip()
+            if not placa_vehiculo:
+                placa_vehiculo = "N/A"
+
             if not id_aseg or not descripcion:
                 st.error("ID Asegurado y Descripción son obligatorios.")
             elif not tipo_doc:
                 st.error("Debe adjuntar al menos un Tipo de Documento.")
-            elif ramo == "Vehículos" and not placa_vehiculo:
-                st.error("El campo Placa del Vehículo es obligatorio para el ramo Vehículos.")
             elif not supabase:
                 st.error("Error: Supabase no está configurado. Configura el archivo .env para continuar.")
             else:
