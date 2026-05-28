@@ -651,8 +651,6 @@ def init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    if not st.session_state["siniestros"]:
-        st.session_state["siniestros"] = cargar_datos_demo()
 
 init_state()
 
@@ -1776,6 +1774,10 @@ def render_detail(s: dict, todos: list):
 # MAIN DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 def page_dashboard():
+    if not st.session_state.get("siniestros"):
+        with st.spinner("Cargando portafolio de siniestros..."):
+            st.session_state["siniestros"] = cargar_datos_demo()
+            
     data = st.session_state["siniestros"]
     render_topbar(data)
 

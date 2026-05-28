@@ -221,3 +221,24 @@ INSERT INTO usuarios (username, email, nombre, rol, password_hash)
 VALUES ('admin', 'admin@fraudia.com', 'Administrador FraudIA', 'admin',
         '$2b$12$demo_hash_replace_in_production')
 ON CONFLICT (username) DO NOTHING;
+
+-- ============================================================
+-- SEGURIDAD: ROW LEVEL SECURITY (RLS)
+-- ============================================================
+-- Se habilita RLS en todas las tablas para cerrar el acceso público no autorizado (API anon).
+ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE asegurados ENABLE ROW LEVEL SECURITY;
+ALTER TABLE polizas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proveedores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE siniestros ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE historial_alertas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversaciones_ia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reportes ENABLE ROW LEVEL SECURITY;
+
+-- IMPORTANTE PARA FUNCIONALIDAD:
+-- Como el sistema gestiona su propia autenticación (Streamlit login en main.py),
+-- por defecto estas reglas bloquean a cualquier persona que use la clave "anon".
+-- Para que el sistema siga funcionando normalmente, debes usar la clave
+-- SUPABASE_SERVICE_ROLE_KEY en lugar de SUPABASE_ANON_KEY dentro de tu .env
+-- La service_role_key se salta el RLS y permite al backend operar correctamente.
